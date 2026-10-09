@@ -9,9 +9,9 @@ async def app_fft(ctx):
 
     fft_engine = FastFFT(size=ctx.state.fft_size)
     raw_buf = bytearray(6)
-    x_samps = array.array('i', [0] * 64)
-    y_samps = array.array('i', [0] * 64)
-    z_samps = array.array('i', [0] * 64)
+    x_samps = array.array('i', [0] * 128)
+    y_samps = array.array('i', [0] * 128)
+    z_samps = array.array('i', [0] * 128)
     history = [0, 0, 0, 0, 0, 0]
     BAR_COLORS = (0xF800, 0xFD20, 0xFFE0, 0x07EA, 0x07E0)
 
@@ -23,7 +23,7 @@ async def app_fft(ctx):
             history = [0, 0, 0, 0, 0, 0]
 
         # Dynamically adapt to active configuration
-        cur_size = 32 if ctx.state.fft_size <= 32 else 64
+        cur_size = 32 if ctx.state.fft_size <= 32 else (64 if ctx.state.fft_size <= 64 else 128)
         if cur_size != fft_engine.size:
             fft_engine.set_size(cur_size)
 
@@ -56,14 +56,13 @@ async def app_fft(ctx):
         )
         ctx.state.set_fft_data(total_e, mag_x, mag_y, mag_z, half_n=half_n)
 
-        # Scale energy by user gain and map to 6-column bar chart (0..5)
-        e_norm = int(total_e * ctx.state.fft_gain)
-        thresh = 2400 if half_n == 32 else 1200
-        if e_norm < thresh: h = 0
-        elif e_norm < thresh * 3: h = 1
-        elif e_norm < thresh * 7: h = 2
-        elif e_norm < thresh * 14: h = 3
-        elif e_norm < thresh * 25: h = 4
+        # Map normalized energy byte (0..255) directly to 6-column LED bar chart (0..5)
+        e_byte = ctx.state.fft_bytes[1]
+        if e_byte < 10: h = 0
+        elif e_byte < 45: h = 1
+        elif e_byte < 95: h = 2
+        elif e_byte < 155: h = 3
+        elif e_byte < 215: h = 4
         else: h = 5
 
         for c in range(5):

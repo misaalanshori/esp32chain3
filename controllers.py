@@ -84,11 +84,13 @@ class AppController(BaseController):
         state.fft_sample_delay = dto.sample_delay
         state.fft_gain = dto.gain
         state.fft_window = dto.window
+        state.fft_energy_scale = dto.energy_scale
         res = {
             "size": state.fft_size,
             "sample_delay": state.fft_sample_delay,
             "gain": state.fft_gain,
             "window": state.fft_window,
+            "energy_scale": state.fft_energy_scale,
         }
         return 200, "application/json", json.dumps(ApiResponseDto(ok=True, data=res).to_dict())
 
@@ -101,6 +103,7 @@ class AppController(BaseController):
             "sample_delay": state.fft_sample_delay,
             "gain": state.fft_gain,
             "window": state.fft_window,
+            "energy_scale": state.fft_energy_scale,
         }
         return 200, "application/json", json.dumps(ApiResponseDto(ok=True, data=res).to_dict())
 

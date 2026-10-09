@@ -36,7 +36,7 @@
 
 Built on an embedded, decoupled **MVC + IoC/DI + AOP** framework on top of a unified cooperative `uasyncio` event loop:
 
-- **`fft.py` (Viper-Accelerated Configurable FFT Engine)**: Dynamic Radix-2 Cooley-Tukey DIT FFT supporting 32 ($16\text{ bins}$) and 64 ($32\text{ bins}$) points, DC-offset subtraction, Hanning windowing, and $\alpha$-max $\beta$-min integer magnitude estimation compiled via `@micropython.viper` ($364\text{ }\mu\text{s}$ for 64-point FFT).
+- **`fft.py` (Viper-Accelerated Configurable FFT Engine)**: Dynamic Radix-2 Cooley-Tukey DIT FFT supporting 32 ($16\text{ bins}$), 64 ($32\text{ bins}$), and 128 ($64\text{ bins}$) points, DC-offset subtraction, Hanning windowing, and $\alpha$-max $\beta$-min integer magnitude estimation compiled via `@micropython.viper` ($700\text{ }\mu\text{s}$ for 128-point FFT).
 - **`container.py` (Inversion of Control & Dependency Injection)**: Central `Container` resolving singletons and factories (`state`, `matrix`, `imu`, `wifi`, `app_manager`, `webserver`).
 - **`dto.py` (Data Transfer Objects)**: Strictly-validated request/response DTOs (`LaunchRequestDto`, `PaintRequestDto`, `TickerRequestDto`, `StudioRequestDto`, `ApiResponseDto`).
 - **`aop.py` (Aspect-Oriented Programming)**:
@@ -82,7 +82,7 @@ Runs as a background async task on port 80 at boot.
 - `GET /events`: **Server-Sent Events (SSE)** binary stream (90 raw RGB bytes base64-encoded to 120 chars, zero heap allocation, `~16 FPS` on screen updates, idle heartbeat every 5s).
 - `GET /events/fft`: **Server-Sent Events (SSE)** self-describing binary 3-axis FFT stream (header: seq, energy, bins, delay; followed by $3 \times B$ magnitude bytes).
 - `GET /api/fft/config`: Query current FFT parameters (size, sample_delay, gain, window).
-- `POST /api/fft/config`: Live reconfigure FFT parameters without rebooting (`{"size": 32|64, "sample_delay": 2..10, "gain": 0.5..4.0, "window": "hann"|"rect"}`).
+- `POST /api/fft/config`: Live reconfigure FFT parameters without rebooting (`{"size": 32|64|128, "sample_delay": 2..10, "gain": 0.5..4.0, "energy_scale": 0.05..1.0, "window": "hann"|"rect"}`).
 - `GET /api/state`: Full system state JSON endpoint (RAM, WiFi, App, Sensors, Screen).
 - `GET /api/scan`: Trigger WiFi scan and return visible networks.
 - `POST /api/launch`: Remotely switch running apps or return to menu (`{"app": 1..12}` or `{"app": "menu"}`).

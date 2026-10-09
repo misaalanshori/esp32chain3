@@ -63,21 +63,24 @@ class StudioRequestDto(DTO):
         return cls(effect=effect, color=color, speed=speed)
 
 class FftConfigRequestDto(DTO):
-    def __init__(self, size=64, sample_delay=3, gain=1.0, window="hann"):
-        self.size = 32 if int(size) <= 32 else 64
+    def __init__(self, size=128, sample_delay=3, gain=1.0, window="hann", energy_scale=0.2):
+        s = int(size)
+        self.size = 32 if s <= 32 else (64 if s <= 64 else 128)
         self.sample_delay = max(2, min(20, int(sample_delay)))
         self.gain = max(0.1, min(10.0, float(gain)))
         self.window = "rect" if str(window).lower() == "rect" else "hann"
+        self.energy_scale = max(0.01, min(10.0, float(energy_scale)))
 
     @classmethod
     def from_dict(cls, data):
         if not isinstance(data, dict):
             raise ValueError("Payload must be a JSON object")
         return cls(
-            size=data.get("size", 64),
+            size=data.get("size", 128),
             sample_delay=data.get("sample_delay", 3),
             gain=data.get("gain", 1.0),
-            window=data.get("window", "hann")
+            window=data.get("window", "hann"),
+            energy_scale=data.get("energy_scale", 0.2)
         )
 
 class ApiResponseDto(DTO):

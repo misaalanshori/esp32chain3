@@ -20,13 +20,14 @@ class StateService:
         self.wifi_manager = None
         self.matrix_service = None
         self.screen_bytes = bytearray(90)
-        self.fft_bytes = bytearray(100)
-        self.fft_active_len = 100
+        self.fft_bytes = bytearray(200)
+        self.fft_active_len = 196
         self.fft_seq = 0
-        # FFT Configurable Parameters
-        self.fft_size = 64
+        # FFT Configurable Parameters (Default N=128 -> 64 Bins)
+        self.fft_size = 128
         self.fft_sample_delay = 3
         self.fft_gain = 1.0
+        self.fft_energy_scale = 0.2
         self.fft_window = "hann"
         self.sensor_data = {
             "x": 0.0, "y": 0.0, "z": 0.0, "temp": 0.0, "active": False
@@ -55,20 +56,22 @@ class StateService:
             self.sensor_data["temp"] = round(float(temp), 1)
         self.sensor_data["active"] = True
 
-    def set_fft_data(self, energy, mag_x, mag_y, mag_z, half_n=32):
+    def set_fft_data(self, energy, mag_x, mag_y, mag_z, half_n=64):
         self.fft_seq = (self.fft_seq + 1) & 0xFF
         b = self.fft_bytes
         b[0] = self.fft_seq
-        energy_scaled = int(energy * self.fft_gain)
-        b[1] = min(255, energy_scaled // (240 if half_n == 32 else 120))
+        # Dynamically scale energy by user energy sensitivity
+        e_scaled = int(energy * self.fft_energy_scale)
+        div_e = max(1, half_n * 8)
+        b[1] = min(255, e_scaled // div_e)
         b[2] = half_n
         b[3] = self.fft_sample_delay
 
-        div = max(1.0, 30.0 / self.fft_gain)
+        div_mag = max(1.0, 30.0 / self.fft_gain)
         for i in range(half_n):
-            b[4 + i] = min(255, int(mag_x[i] / div))
-            b[4 + half_n + i] = min(255, int(mag_y[i] / div))
-            b[4 + 2 * half_n + i] = min(255, int(mag_z[i] / div))
+            b[4 + i] = min(255, int(mag_x[i] / div_mag))
+            b[4 + half_n + i] = min(255, int(mag_y[i] / div_mag))
+            b[4 + 2 * half_n + i] = min(255, int(mag_z[i] / div_mag))
         self.fft_active_len = 4 + 3 * half_n
 
     def get_fft_raw(self):
