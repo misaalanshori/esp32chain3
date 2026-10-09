@@ -1,7 +1,7 @@
-# webserver.py - Async Web Server with Live Dashboard and JSON State API
+# webserver.py - Async Web Server with SSE Screen Mirroring, Live Dashboard and JSON State API
 import asyncio
 import json
-import gc
+import time
 from state import system_state
 
 HTML_DASHBOARD = """<!DOCTYPE html>
@@ -36,6 +36,13 @@ th,td{padding:6px 4px;text-align:left;border-bottom:1px solid var(--border)}
 th{color:var(--sub);font-weight:500}
 button{background:#21262d;color:var(--blue);border:1px solid var(--border);padding:4px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer}
 button:hover{background:#30363d}
+
+/* Mirror Styles */
+.mirror-box{display:flex;flex-direction:column;align-items:center;background:#06090e;border:2px solid #21262d;border-radius:12px;padding:18px 12px;margin:8px 0;box-shadow:inset 0 2px 10px rgba(0,0,0,0.8)}
+.matrix-grid{display:grid;grid-template-columns:repeat(6,32px);gap:9px}
+.led{width:32px;height:32px;border-radius:50%;background:#10151c;border:1px solid #1c2430;transition:background-color 0.08s ease,box-shadow 0.08s ease}
+.sse-tag{font-size:0.7rem;color:var(--green);display:flex;align-items:center;gap:5px}
+.sse-dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
 </style>
 </head>
 <body>
@@ -43,6 +50,17 @@ button:hover{background:#30363d}
   <h1><div class="pulse" id="pulseDot"></div> ESP32-C3 Chain3</h1>
   <div id="statusBadge" class="badge badge-sta">CONNECTING</div>
 </header>
+
+<div class="card" style="margin-bottom:14px">
+  <h2>
+    <span>📺 Screen Mirror (6 &times; 5 Matrix)</span>
+    <span class="sse-tag"><div class="sse-dot"></div> SSE Live Stream</span>
+  </h2>
+  <div class="mirror-box">
+    <div class="matrix-grid" id="matrixGrid"></div>
+  </div>
+</div>
+
 <div class="grid">
   <div class="card">
     <h2>📶 WiFi Network <span id="wifiMode" style="font-size:0.75rem;color:var(--sub)"></span></h2>
@@ -77,6 +95,7 @@ button:hover{background:#30363d}
     <div class="stat"><span>Temperature</span><span id="imuTemp" class="val">-</span></div>
   </div>
 </div>
+
 <div class="card" style="margin-top:14px">
   <h2>📡 Scanned Networks <button onclick="triggerScan()">Refresh Scan</button></h2>
   <table>
@@ -84,7 +103,50 @@ button:hover{background:#30363d}
     <tbody id="scanTable"><tr><td colspan="3" style="color:var(--sub)">No scan results yet...</td></tr></tbody>
   </table>
 </div>
+
 <script>
+// Build 30 LEDs
+const grid = document.getElementById('matrixGrid');
+for(let i=0; i<30; i++){
+  const d = document.createElement('div');
+  d.className = 'led';
+  grid.appendChild(d);
+}
+const leds = grid.children;
+
+function updateMirror(pixels){
+  if(!pixels || pixels.length < 30) return;
+  for(let i=0; i<30; i++){
+    const c = pixels[i];
+    leds[i].style.backgroundColor = c;
+    if(c !== '#000000'){
+      leds[i].style.boxShadow = '0 0 12px ' + c;
+      leds[i].style.borderColor = c;
+    } else {
+      leds[i].style.boxShadow = 'none';
+      leds[i].style.borderColor = '#1c2430';
+    }
+  }
+}
+
+// Server-Sent Events (SSE) for Real-Time Screen Mirroring
+let sseSource = null;
+function startSSE(){
+  if(sseSource){ sseSource.close(); }
+  sseSource = new EventSource('/events');
+  sseSource.onmessage = function(e){
+    try{
+      const d = JSON.parse(e.data);
+      if(d.screen) updateMirror(d.screen);
+      if(d.app) document.getElementById('appActive').innerText = d.app;
+    }catch(err){}
+  };
+  sseSource.onerror = function(){
+    // Reconnect handled automatically by EventSource
+  };
+}
+startSSE();
+
 function fmtUptime(s){const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;}
 async function updateState(){
   try{
@@ -123,6 +185,9 @@ async function updateState(){
     document.getElementById('imuZ').innerText=imu.z!==undefined?imu.z:'-';
     document.getElementById('imuTemp').innerText=imu.temp!==undefined?(imu.temp+' &deg;C'):'-';
 
+    if(d.screen && (!sseSource || sseSource.readyState !== EventSource.OPEN)){
+      updateMirror(d.screen);
+    }
     if(w.scanned&&w.scanned.length>0){renderScanTable(w.scanned);}
   }catch(e){}
 }
@@ -137,12 +202,38 @@ async function triggerScan(){
     renderScanTable(list);
   }catch(e){}
 }
-setInterval(updateState,1500);
+setInterval(updateState,2500);
 updateState();
 </script>
 </body>
 </html>
 """
+
+async def _stream_sse(writer):
+    headers = (
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/event-stream\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Connection: keep-alive\r\n"
+        "Access-Control-Allow-Origin: *\r\n\r\n"
+    )
+    writer.write(headers.encode("utf-8"))
+    await writer.drain()
+
+    last_pixels = None
+    last_heartbeat = time.ticks_ms()
+    while True:
+        curr = system_state.get_screen_pixels()
+        now = time.ticks_ms()
+        # Send immediately when screen changes, or heartbeat every 5s
+        if curr != last_pixels or time.ticks_diff(now, last_heartbeat) > 5000:
+            payload = json.dumps({"screen": curr, "app": system_state.active_app})
+            msg = "data: " + payload + "\r\n\r\n"
+            writer.write(msg.encode("utf-8"))
+            await writer.drain()
+            last_pixels = curr
+            last_heartbeat = now
+        await asyncio.sleep_ms(60)
 
 async def handle_client(reader, writer):
     try:
@@ -164,7 +255,10 @@ async def handle_client(reader, writer):
             if not line or line == b"\r\n" or line == b"\n":
                 break
 
-        if path == "/api/state":
+        if path == "/events" or path == "/api/events":
+            await _stream_sse(writer)
+            return
+        elif path == "/api/state":
             body = json.dumps(system_state.get_summary())
             hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(body)}\r\n\r\n"
             writer.write(hdr.encode('utf-8') + body.encode('utf-8'))

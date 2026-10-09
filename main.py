@@ -145,6 +145,7 @@ def main():
     neo_pixel = neopixel.NeoPixel(neo_pin, matrixWidth * matrixHeight)
     neo_matrix = NeoMatrix(matrixWidth, matrixHeight, neo_pixel)
     neo_matrix.set_brightness(0.3)
+    system_state.matrix = neo_matrix
 
     # 3. Setup and start Menu
     menu = Menu(neo_matrix, btn_pin=9, hold_ms=600)

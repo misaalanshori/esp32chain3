@@ -3,12 +3,22 @@ import time
 import gc
 import machine
 
+# Serpentine layout indices for 6x5 matrix
+INDEX_MAP = (
+    0, 1, 2, 3, 4, 5,
+    11, 10, 9, 8, 7, 6,
+    12, 13, 14, 15, 16, 17,
+    23, 22, 21, 20, 19, 18,
+    24, 25, 26, 27, 28, 29,
+)
+
 class SystemState:
     def __init__(self):
         self.boot_time = time.ticks_ms()
         self.active_app = "Menu"
         self.menu_index = 1
         self.wifi_manager = None
+        self.matrix = None
         self.sensor_data = {
             "x": 0.0,
             "y": 0.0,
@@ -30,6 +40,28 @@ class SystemState:
         if temp is not None:
             self.sensor_data["temp"] = round(float(temp), 1)
         self.sensor_data["active"] = True
+
+    def get_screen_pixels(self):
+        if not self.matrix:
+            return ["#000000"] * 30
+        try:
+            np_buf = self.matrix.neopixel.buf
+            br = getattr(self.matrix, "brightness", 1.0)
+            scale = (1.0 / br) if (br > 0.05) else 1.0
+
+            pixels = []
+            for idx in INDEX_MAP:
+                off = idx * 3
+                g = np_buf[off]
+                r = np_buf[off + 1]
+                b = np_buf[off + 2]
+                rn = min(255, int(r * scale))
+                gn = min(255, int(g * scale))
+                bn = min(255, int(b * scale))
+                pixels.append("#{:02x}{:02x}{:02x}".format(rn, gn, bn))
+            return pixels
+        except Exception:
+            return ["#000000"] * 30
 
     def get_summary(self):
         uptime_s = time.ticks_diff(time.ticks_ms(), self.boot_time) // 1000
@@ -56,6 +88,7 @@ class SystemState:
                 "menu_index": self.menu_index,
             },
             "sensors": self.sensor_data,
+            "screen": self.get_screen_pixels(),
         }
 
 # Global singleton
