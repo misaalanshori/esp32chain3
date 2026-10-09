@@ -20,8 +20,14 @@ class StateService:
         self.wifi_manager = None
         self.matrix_service = None
         self.screen_bytes = bytearray(90)
-        self.fft_bytes = bytearray(50)
+        self.fft_bytes = bytearray(100)
+        self.fft_active_len = 100
         self.fft_seq = 0
+        # FFT Configurable Parameters
+        self.fft_size = 64
+        self.fft_sample_delay = 3
+        self.fft_gain = 1.0
+        self.fft_window = "hann"
         self.sensor_data = {
             "x": 0.0, "y": 0.0, "z": 0.0, "temp": 0.0, "active": False
         }
@@ -49,18 +55,24 @@ class StateService:
             self.sensor_data["temp"] = round(float(temp), 1)
         self.sensor_data["active"] = True
 
-    def set_fft_data(self, energy, mag_x, mag_y, mag_z):
+    def set_fft_data(self, energy, mag_x, mag_y, mag_z, half_n=32):
         self.fft_seq = (self.fft_seq + 1) & 0xFF
         b = self.fft_bytes
         b[0] = self.fft_seq
-        b[1] = min(255, energy // 120)
-        for i in range(16):
-            b[2 + i] = min(255, mag_x[i] // 30)
-            b[18 + i] = min(255, mag_y[i] // 30)
-            b[34 + i] = min(255, mag_z[i] // 30)
+        energy_scaled = int(energy * self.fft_gain)
+        b[1] = min(255, energy_scaled // (240 if half_n == 32 else 120))
+        b[2] = half_n
+        b[3] = self.fft_sample_delay
+
+        div = max(1.0, 30.0 / self.fft_gain)
+        for i in range(half_n):
+            b[4 + i] = min(255, int(mag_x[i] / div))
+            b[4 + half_n + i] = min(255, int(mag_y[i] / div))
+            b[4 + 2 * half_n + i] = min(255, int(mag_z[i] / div))
+        self.fft_active_len = 4 + 3 * half_n
 
     def get_fft_raw(self):
-        return self.fft_bytes
+        return memoryview(self.fft_bytes)[:self.fft_active_len]
 
     def get_screen_raw(self):
         if not self.matrix_service:

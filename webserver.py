@@ -190,7 +190,7 @@ button:hover{background:#30363d}
 <div class="card" style="margin-top:14px">
   <h2>
     <span>MPU6050 3-Axis Spectrogram Heatmap</span>
-    <span class="sse-tag"><div class="sse-dot"></div> 300 Hz (&lt;5ms) SSE Stream</span>
+    <span class="sse-tag"><div class="sse-dot"></div> <span id="streamRateBadge">&le;3ms Stream</span></span>
   </h2>
   <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
     <div style="display:flex;align-items:center;gap:6px">
@@ -209,7 +209,7 @@ button:hover{background:#30363d}
   <div class="bar-wrap" style="height:8px;margin-bottom:10px"><div id="fftEnergyBar" class="bar" style="background:var(--green)"></div></div>
 
   <div style="position:relative;background:#050810;border:1px solid var(--border);border-radius:6px;overflow:hidden">
-    <div style="position:absolute;left:4px;top:2px;font-size:0.65rem;color:var(--sub);font-family:monospace;pointer-events:none">150 Hz &uarr;</div>
+    <div style="position:absolute;left:4px;top:2px;font-size:0.65rem;color:var(--sub);font-family:monospace;pointer-events:none" id="topFreqText">150 Hz &uarr;</div>
     <div style="position:absolute;left:4px;bottom:2px;font-size:0.65rem;color:var(--sub);font-family:monospace;pointer-events:none">0 Hz (DC Filtered) &darr;</div>
     <div style="position:absolute;right:6px;top:2px;font-size:0.65rem;color:var(--sub);font-family:monospace;pointer-events:none" id="peakFreqText">Peak: - Hz</div>
     <canvas id="spectroCanvas" width="360" height="112" style="width:100%;height:112px;display:block;image-rendering:pixelated"></canvas>
@@ -221,7 +221,34 @@ button:hover{background:#30363d}
       <div style="width:60px;height:8px;border-radius:2px;background:linear-gradient(to right, #000, #3c096c, #e85d04, #ffdd00, #fff)"></div>
       <span>Peak</span>
     </span>
-    <span>Live (Now) &rarr;</span>
+    <span>Live &rarr;</span>
+  </div>
+
+  <!-- Dynamic FFT Configuration Toolbar -->
+  <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(48,54,61,0.5);display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:0.75rem">
+    <div style="display:flex;align-items:center;gap:4px">
+      <span style="color:var(--sub)">Bins:</span>
+      <button class="eff-btn" id="cfg-bins16" onclick="setFftCfg({size:32})">16</button>
+      <button class="eff-btn active" id="cfg-bins32" onclick="setFftCfg({size:64})">32</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <span style="color:var(--sub)">Interval:</span>
+      <button class="eff-btn" id="cfg-rate2" onclick="setFftCfg({sample_delay:2})">2ms</button>
+      <button class="eff-btn active" id="cfg-rate3" onclick="setFftCfg({sample_delay:3})">3ms</button>
+      <button class="eff-btn" id="cfg-rate5" onclick="setFftCfg({sample_delay:5})">5ms</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <span style="color:var(--sub)">Gain:</span>
+      <button class="eff-btn" id="cfg-gain05" onclick="setFftCfg({gain:0.5})">0.5x</button>
+      <button class="eff-btn active" id="cfg-gain10" onclick="setFftCfg({gain:1.0})">1x</button>
+      <button class="eff-btn" id="cfg-gain20" onclick="setFftCfg({gain:2.0})">2x</button>
+      <button class="eff-btn" id="cfg-gain40" onclick="setFftCfg({gain:4.0})">4x</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:4px">
+      <span style="color:var(--sub)">Win:</span>
+      <button class="eff-btn active" id="cfg-win-hann" onclick="setFftCfg({window:'hann'})">Hann</button>
+      <button class="eff-btn" id="cfg-win-rect" onclick="setFftCfg({window:'rect'})">Rect</button>
+    </div>
   </div>
 </div>
 
@@ -315,25 +342,36 @@ function startFftSSE(){
     fftSource.onmessage = function(e){
       try{
         const b = atob(e.data.trim());
-        if(b.length < 50) return;
+        if(b.length < 8) return;
+        const seq = b.charCodeAt(0);
         const energy = b.charCodeAt(1);
+        const numBins = b.charCodeAt(2);
+        const delayMs = b.charCodeAt(3);
+        const expectedLen = 4 + 3 * numBins;
+        if(b.length < expectedLen) return;
+
         document.getElementById('fftEnergyVal').innerText = energy;
         const eBar = document.getElementById('fftEnergyBar');
         const pct = Math.min(100, Math.round((energy / 255) * 100));
         eBar.style.width = pct + '%';
         eBar.style.backgroundColor = (pct > 65) ? 'var(--red)' : ((pct > 30) ? 'var(--amber)' : 'var(--green)');
 
+        const estFs = Math.round(1000 / (delayMs + 0.3));
+        const nyqHz = Math.round(estFs / 2);
+        const topEl = document.getElementById('topFreqText');
+        if(topEl) topEl.innerText = `${nyqHz} Hz (${numBins} Bins) \u2191`;
+
         if(spectroCtx){
           const w = spectroCanvas.width, h = spectroCanvas.height;
           // Waterfall scroll: shift canvas left by 2px
           spectroCtx.drawImage(spectroCanvas, -2, 0);
 
-          const binH = h / 16;
+          const binH = h / numBins;
           let peakBin = 0, peakMag = 0;
-          for(let i=0; i<16; i++){
-            const mx = b.charCodeAt(2 + i);
-            const my = b.charCodeAt(18 + i);
-            const mz = b.charCodeAt(34 + i);
+          for(let i=0; i<numBins; i++){
+            const mx = b.charCodeAt(4 + i);
+            const my = b.charCodeAt(4 + numBins + i);
+            const mz = b.charCodeAt(4 + 2 * numBins + i);
             let val = 0;
             if(spectroAxis === 'xyz') val = Math.max(mx, my, mz);
             else if(spectroAxis === 'x') val = mx;
@@ -345,14 +383,51 @@ function startFftSSE(){
             spectroCtx.fillStyle = getHeatColor(val);
             spectroCtx.fillRect(w - 2, h - Math.round((i + 1) * binH), 2, Math.ceil(binH) + 1);
           }
-          const peakHz = Math.round(peakBin * 9.38);
-          document.getElementById('peakFreqText').innerText = `Peak: ${peakHz} Hz (${peakMag})`;
+          const peakHz = Math.round((peakBin * nyqHz) / numBins);
+          const pEl = document.getElementById('peakFreqText');
+          if(pEl) pEl.innerText = `Peak: ${peakHz} Hz (${peakMag})`;
         }
       }catch(err){}
     };
   }catch(e){}
 }
 startFftSSE();
+
+async function setFftCfg(cfg){
+  try{
+    const r = await fetch('/api/fft/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(cfg)
+    });
+    if(r.ok){
+      const res = await r.json();
+      updateCfgButtons(res.data);
+    }
+  }catch(e){}
+}
+function updateCfgButtons(c){
+  if(!c) return;
+  if(c.size !== undefined){
+    document.getElementById('cfg-bins16').classList.toggle('active', c.size === 32);
+    document.getElementById('cfg-bins32').classList.toggle('active', c.size === 64);
+  }
+  if(c.sample_delay !== undefined){
+    document.getElementById('cfg-rate2').classList.toggle('active', c.sample_delay === 2);
+    document.getElementById('cfg-rate3').classList.toggle('active', c.sample_delay === 3);
+    document.getElementById('cfg-rate5').classList.toggle('active', c.sample_delay === 5);
+  }
+  if(c.gain !== undefined){
+    document.getElementById('cfg-gain05').classList.toggle('active', c.gain === 0.5);
+    document.getElementById('cfg-gain10').classList.toggle('active', c.gain === 1.0);
+    document.getElementById('cfg-gain20').classList.toggle('active', c.gain === 2.0);
+    document.getElementById('cfg-gain40').classList.toggle('active', c.gain === 4.0);
+  }
+  if(c.window !== undefined){
+    document.getElementById('cfg-win-hann').classList.toggle('active', c.window === 'hann');
+    document.getElementById('cfg-win-rect').classList.toggle('active', c.window === 'rect');
+  }
+}
 
 let paintColor = '#00ffff';
 const paintBuf = Array(30).fill('#000000');

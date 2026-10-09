@@ -5,7 +5,8 @@ import time
 import asyncio
 from aop import route, json_dto, handle_errors
 from dto import (
-    LaunchRequestDto, PaintRequestDto, TickerRequestDto, StudioRequestDto, ApiResponseDto
+    LaunchRequestDto, PaintRequestDto, TickerRequestDto, StudioRequestDto,
+    FftConfigRequestDto, ApiResponseDto
 )
 
 class BaseController:
@@ -73,6 +74,35 @@ class AppController(BaseController):
         state.studio_speed = dto.speed
         app_mgr.request_switch(12)
         return 200, "application/json", json.dumps(ApiResponseDto(ok=True).to_dict())
+
+    @route("/api/fft/config", "POST")
+    @json_dto(FftConfigRequestDto)
+    @handle_errors
+    async def set_fft_config(self, request, dto):
+        state = self.ioc.resolve("state")
+        state.fft_size = dto.size
+        state.fft_sample_delay = dto.sample_delay
+        state.fft_gain = dto.gain
+        state.fft_window = dto.window
+        res = {
+            "size": state.fft_size,
+            "sample_delay": state.fft_sample_delay,
+            "gain": state.fft_gain,
+            "window": state.fft_window,
+        }
+        return 200, "application/json", json.dumps(ApiResponseDto(ok=True, data=res).to_dict())
+
+    @route("/api/fft/config", "GET")
+    @handle_errors
+    async def get_fft_config(self, request):
+        state = self.ioc.resolve("state")
+        res = {
+            "size": state.fft_size,
+            "sample_delay": state.fft_sample_delay,
+            "gain": state.fft_gain,
+            "window": state.fft_window,
+        }
+        return 200, "application/json", json.dumps(ApiResponseDto(ok=True, data=res).to_dict())
 
 class StreamController(BaseController):
     @route("/events", "GET")

@@ -1,17 +1,17 @@
-# apps/mpu_fft.py - App 13: High-Speed 3-Axis FFT & Energy Waterfall
+# apps/mpu_fft.py - App 13: Configurable High-Speed 3-Axis FFT & Energy Waterfall
 import array
-from fft import FastFFT32
+from fft import FastFFT
 
 async def app_fft(ctx):
     imu = ctx.get_imu()
     if not imu:
         return
 
-    fft_engine = FastFFT32()
+    fft_engine = FastFFT(size=ctx.state.fft_size)
     raw_buf = bytearray(6)
-    x_samps = array.array('i', [0] * 32)
-    y_samps = array.array('i', [0] * 32)
-    z_samps = array.array('i', [0] * 32)
+    x_samps = array.array('i', [0] * 64)
+    y_samps = array.array('i', [0] * 64)
+    z_samps = array.array('i', [0] * 64)
     history = [0, 0, 0, 0, 0, 0]
     BAR_COLORS = (0xF800, 0xFD20, 0xFFE0, 0x07EA, 0x07E0)
 
@@ -22,8 +22,16 @@ async def app_fft(ctx):
         if act == "tap":
             history = [0, 0, 0, 0, 0, 0]
 
-        # Fast 3ms sampling (~300 Hz sample rate, < 5ms interval)
-        for s in range(32):
+        # Dynamically adapt to active configuration
+        cur_size = 32 if ctx.state.fft_size <= 32 else 64
+        if cur_size != fft_engine.size:
+            fft_engine.set_size(cur_size)
+
+        sample_delay = ctx.state.fft_sample_delay
+        use_window = (ctx.state.fft_window == "hann")
+
+        # High-speed I2C sampling loop (2ms - 5ms interval)
+        for s in range(cur_size):
             if ctx.should_stop():
                 return
             try:
@@ -40,18 +48,22 @@ async def app_fft(ctx):
                 z_samps[s] = z
             except Exception:
                 pass
-            await ctx.sleep_ms(3)
+            await ctx.sleep_ms(sample_delay)
 
-        # 3-Axis FFT with DC offset removal and Hanning window
-        mag_x, mag_y, mag_z, total_e = fft_engine.process_3axis(x_samps, y_samps, z_samps)
-        ctx.state.set_fft_data(total_e, mag_x, mag_y, mag_z)
+        # Process 3-axis FFT with DC-offset removal and optional windowing
+        mag_x, mag_y, mag_z, total_e, half_n = fft_engine.process_3axis(
+            x_samps, y_samps, z_samps, use_window=use_window
+        )
+        ctx.state.set_fft_data(total_e, mag_x, mag_y, mag_z, half_n=half_n)
 
-        # Dynamic movement energy mapped to bar height 0..5
-        if total_e < 1200: h = 0
-        elif total_e < 3500: h = 1
-        elif total_e < 8000: h = 2
-        elif total_e < 16000: h = 3
-        elif total_e < 30000: h = 4
+        # Scale energy by user gain and map to 6-column bar chart (0..5)
+        e_norm = int(total_e * ctx.state.fft_gain)
+        thresh = 2400 if half_n == 32 else 1200
+        if e_norm < thresh: h = 0
+        elif e_norm < thresh * 3: h = 1
+        elif e_norm < thresh * 7: h = 2
+        elif e_norm < thresh * 14: h = 3
+        elif e_norm < thresh * 25: h = 4
         else: h = 5
 
         for c in range(5):
