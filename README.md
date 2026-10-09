@@ -55,7 +55,7 @@ WIFI_NETWORKS = [
 Runs as a background async task on port 80 at boot.
 
 - `GET /`: Responsive dark-mode dashboard with live status updates and real-time screen mirror.
-- `GET /events`: **Server-Sent Events (SSE)** endpoint streaming live 6x5 matrix pixel colors (`~16 FPS` on screen updates, idle heartbeat every 5s).
+- `GET /events`: **Server-Sent Events (SSE)** binary stream (90 raw RGB bytes base64-encoded to 120 chars, zero heap allocation, `~16 FPS` on screen updates, idle heartbeat every 5s).
 - `GET /api/state`: Full system state JSON endpoint (RAM, WiFi, App, Sensors, Screen).
 - `GET /api/scan`: Trigger WiFi scan and return visible networks.
 

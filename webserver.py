@@ -2,6 +2,7 @@
 import asyncio
 import json
 import time
+import ubinascii
 from state import system_state
 
 HTML_DASHBOARD = """<!DOCTYPE html>
@@ -129,17 +130,35 @@ function updateMirror(pixels){
   }
 }
 
-// Server-Sent Events (SSE) for Real-Time Screen Mirroring
+// Binary SSE Parser for 30 RGB triplets (90 bytes base64-encoded)
+function renderBinaryScreen(b64){
+  try{
+    const b = atob(b64);
+    if(b.length < 90) return;
+    for(let i=0; i<30; i++){
+      const r = b.charCodeAt(i*3);
+      const g = b.charCodeAt(i*3+1);
+      const bl = b.charCodeAt(i*3+2);
+      const c = `rgb(${r},${g},${bl})`;
+      leds[i].style.backgroundColor = c;
+      if(r || g || bl){
+        leds[i].style.boxShadow = '0 0 12px ' + c;
+        leds[i].style.borderColor = c;
+      } else {
+        leds[i].style.boxShadow = 'none';
+        leds[i].style.borderColor = '#1c2430';
+      }
+    }
+  }catch(err){}
+}
+
+// Server-Sent Events (SSE) with Binary Base64 Payload
 let sseSource = null;
 function startSSE(){
   if(sseSource){ sseSource.close(); }
   sseSource = new EventSource('/events');
   sseSource.onmessage = function(e){
-    try{
-      const d = JSON.parse(e.data);
-      if(d.screen) updateMirror(d.screen);
-      if(d.app) document.getElementById('appActive').innerText = d.app;
-    }catch(err){}
+    renderBinaryScreen(e.data);
   };
   sseSource.onerror = function(){
     // Reconnect handled automatically by EventSource
@@ -220,18 +239,17 @@ async def _stream_sse(writer):
     writer.write(headers.encode("utf-8"))
     await writer.drain()
 
-    last_pixels = None
+    last_raw = bytearray(90)
     last_heartbeat = time.ticks_ms()
     while True:
-        curr = system_state.get_screen_pixels()
+        curr = system_state.get_screen_raw()
         now = time.ticks_ms()
-        # Send immediately when screen changes, or heartbeat every 5s
-        if curr != last_pixels or time.ticks_diff(now, last_heartbeat) > 5000:
-            payload = json.dumps({"screen": curr, "app": system_state.active_app})
-            msg = "data: " + payload + "\r\n\r\n"
-            writer.write(msg.encode("utf-8"))
+        # Fast bytearray comparison, send only on change or 5s heartbeat
+        if curr != last_raw or time.ticks_diff(now, last_heartbeat) > 5000:
+            b64 = ubinascii.b2a_base64(curr)
+            writer.write(b"data: " + b64 + b"\n")
             await writer.drain()
-            last_pixels = curr
+            last_raw[:] = curr
             last_heartbeat = now
         await asyncio.sleep_ms(60)
 

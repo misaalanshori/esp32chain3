@@ -19,6 +19,7 @@ class SystemState:
         self.menu_index = 1
         self.wifi_manager = None
         self.matrix = None
+        self.screen_bytes = bytearray(90)
         self.sensor_data = {
             "x": 0.0,
             "y": 0.0,
@@ -40,6 +41,29 @@ class SystemState:
         if temp is not None:
             self.sensor_data["temp"] = round(float(temp), 1)
         self.sensor_data["active"] = True
+
+    def get_screen_raw(self):
+        if not self.matrix:
+            return self.screen_bytes
+        try:
+            np_buf = self.matrix.neopixel.buf
+            br = getattr(self.matrix, "brightness", 1.0)
+            scale = (1.0 / br) if (br > 0.05) else 1.0
+
+            out = self.screen_bytes
+            out_i = 0
+            for idx in INDEX_MAP:
+                off = idx * 3
+                g = np_buf[off]
+                r = np_buf[off + 1]
+                b = np_buf[off + 2]
+                out[out_i] = min(255, int(r * scale))
+                out[out_i + 1] = min(255, int(g * scale))
+                out[out_i + 2] = min(255, int(b * scale))
+                out_i += 3
+            return out
+        except Exception:
+            return self.screen_bytes
 
     def get_screen_pixels(self):
         if not self.matrix:
