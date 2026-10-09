@@ -184,7 +184,10 @@ button:hover{background:#30363d}
 <div class="card" style="margin-top:14px">
   <h2>
     <span>Registered Applications</span>
-    <span id="appSummary" style="font-size:0.75rem;color:var(--sub)">12 Apps</span>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button onclick="launchApp('menu')" style="padding:3px 8px;font-size:0.7rem">Return to Menu</button>
+      <span id="appSummary" style="font-size:0.75rem;color:var(--sub)">12 Apps</span>
+    </div>
   </h2>
   <div class="app-list" id="appList">
     <div style="color:var(--sub);font-size:0.85rem">Loading apps...</div>
@@ -281,6 +284,7 @@ function clearCanvas(){
 }
 async function sendCanvas(){
   await fetch('/api/paint', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pixels:paintBuf})});
+  launchApp(10);
 }
 
 // WebTicker
@@ -292,6 +296,7 @@ async function sendTicker(){
   const t = document.getElementById('tickerInput').value;
   const c = document.getElementById('tickerColor').value;
   await fetch('/api/ticker', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:t, color:c})});
+  launchApp(11);
 }
 
 // WebStudio
@@ -305,6 +310,14 @@ function pickEff(e, btn){
 async function sendStudio(){
   const c = document.getElementById('studioColor').value;
   await fetch('/api/studio', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({effect:curEff, color:c})});
+  launchApp(12);
+}
+
+async function launchApp(target){
+  try{
+    await fetch('/api/launch', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({app:target})});
+    setTimeout(updateState, 100);
+  }catch(e){}
 }
 
 // Tab Switching
@@ -380,20 +393,20 @@ function renderAppList(apps, activeApp, menuIdx){
     const isRunning = (activeApp === a.name);
     const isSelected = (activeApp === 'Menu' && menuIdx === a.id);
     let cls = 'app-item';
-    let badge = '<span style="color:var(--sub);font-size:0.7rem">Ready</span>';
+    let btnHtml = '';
     if(isRunning){
       cls += ' active';
-      badge = '<span class="badge badge-sta" style="font-size:0.65rem">Running</span>';
-    }else if(isSelected){
-      cls += ' selected';
-      badge = '<span class="badge" style="background:rgba(88,166,255,0.15);color:var(--blue);border:1px solid var(--blue);font-size:0.65rem">Selected</span>';
+      btnHtml = `<button onclick="launchApp('menu')" style="background:var(--red);color:#fff;padding:2px 8px;font-size:0.7rem;border:none">Exit</button>`;
+    }else{
+      if(isSelected) cls += ' selected';
+      btnHtml = `<button onclick="launchApp(${a.id})" style="background:#21262d;color:var(--blue);padding:2px 8px;font-size:0.7rem">Launch &#9654;</button>`;
     }
     return `<div class="${cls}">
       <div style="display:flex;align-items:center">
         <span class="app-id">${a.id}</span>
         <strong>${a.name}</strong>
       </div>
-      ${badge}
+      ${btnHtml}
     </div>`;
   }).join('');
 }
@@ -499,6 +512,10 @@ async def handle_client(reader, writer):
                         system_state.studio_color = str(data["color"])
                     if "speed" in data:
                         system_state.studio_speed = int(data["speed"])
+                elif path == "/api/launch":
+                    target = data.get("app") if "app" in data else data.get("name")
+                    if target is not None:
+                        system_state.request_app(target)
 
                 resp = b'{"ok": true}'
                 hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(resp)}\r\n\r\n".encode("utf-8")

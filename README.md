@@ -67,4 +67,8 @@ Runs as a background async task on port 80 at boot.
 - `GET /events`: **Server-Sent Events (SSE)** binary stream (90 raw RGB bytes base64-encoded to 120 chars, zero heap allocation, `~16 FPS` on screen updates, idle heartbeat every 5s).
 - `GET /api/state`: Full system state JSON endpoint (RAM, WiFi, App, Sensors, Screen).
 - `GET /api/scan`: Trigger WiFi scan and return visible networks.
+- `POST /api/launch`: Remotely switch running apps or return to menu (`{"app": 1..12}` or `{"app": "menu"}`).
+- `POST /api/paint`: Push custom 30-LED pixel array for `WebPaint`.
+- `POST /api/ticker`: Push text and color for `WebTicker`.
+- `POST /api/studio`: Push procedural lighting effects for `WebStudio`.
 

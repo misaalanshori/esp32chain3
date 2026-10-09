@@ -9,13 +9,8 @@ MATRIX_HEIGHT = const(5)
 
 # --- Button Polling Helper ---
 def poll_btn(btn, hold_ms=500):
-    """
-    Polls BOOT button.
-    Returns:
-      'exit' - held >= hold_ms (request to exit back to menu)
-      'tap'  - short press released
-      None   - not pressed
-    """
+    if system_state.requested_app is not None:
+        return "exit"
     if btn.value() == 0:
         t0 = time.ticks_ms()
         while btn.value() == 0:

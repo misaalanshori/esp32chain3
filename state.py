@@ -17,6 +17,7 @@ class SystemState:
         self.boot_time = time.ticks_ms()
         self.active_app = "Menu"
         self.menu_index = 1
+        self.requested_app = None
         self.registered_apps = []
         self.wifi_manager = None
         self.matrix = None
@@ -41,6 +42,9 @@ class SystemState:
 
     def set_active_app(self, name):
         self.active_app = name
+
+    def request_app(self, target):
+        self.requested_app = target
 
     def set_registered_apps(self, apps_list):
         self.registered_apps = [{"id": i + 1, "name": name} for i, (name, _) in enumerate(apps_list)]

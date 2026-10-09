@@ -88,6 +88,24 @@ class Menu:
             self.matrix.pixel(meter_col, 4 - i, 0xFFFF)
         self.matrix.show()
 
+    def _launch_app(self, idx):
+        self.current = idx
+        app = self.apps[idx]
+        system_state.set_active_app(app["name"])
+        self.matrix.fill(0)
+        self.matrix.show()
+        try:
+            app["handler"](self.matrix, self.btn)
+        except TypeError:
+            try:
+                app["handler"](self.matrix)
+            except TypeError:
+                app["handler"]()
+        except Exception as e:
+            print("App exception:", e)
+        system_state.set_active_app("Menu")
+        self.draw_menu()
+
     def run(self):
         if not self.apps:
             return
@@ -95,6 +113,26 @@ class Menu:
         self.draw_menu()
 
         while True:
+            # Check remote web launch request
+            if system_state.requested_app is not None:
+                req = system_state.requested_app
+                system_state.requested_app = None
+                if req == "menu" or req == 0:
+                    self.draw_menu()
+                else:
+                    target_idx = None
+                    if isinstance(req, int):
+                        if 1 <= req <= len(self.apps):
+                            target_idx = req - 1
+                    elif isinstance(req, str):
+                        for i, a in enumerate(self.apps):
+                            if a["name"].lower() == req.lower():
+                                target_idx = i
+                                break
+                    if target_idx is not None:
+                        self._launch_app(target_idx)
+                        continue
+
             if self.btn.value() == 0:
                 t0 = time.ticks_ms()
                 long_pressed = False
@@ -126,21 +164,7 @@ class Menu:
                     time.sleep_ms(50)
 
                     # Launch app
-                    app = self.apps[self.current]
-                    system_state.set_active_app(app["name"])
-                    try:
-                        app["handler"](self.matrix, self.btn)
-                    except TypeError:
-                        try:
-                            app["handler"](self.matrix)
-                        except TypeError:
-                            app["handler"]()
-                    except Exception as e:
-                        print("App exception:", e)
-
-                    # Return to menu
-                    system_state.set_active_app("Menu")
-                    self.draw_menu()
+                    self._launch_app(self.current)
                 else:
                     # Short press: cycle to next app
                     if time.ticks_diff(time.ticks_ms(), t0) > 30:
