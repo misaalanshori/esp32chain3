@@ -1,4 +1,4 @@
-import framebuf, math
+import framebuf
 
 FIVERATIO = const(8) # 255 // 31
 SIXRATIO = const(4) # 255 // 63
@@ -64,33 +64,8 @@ class NeoMatrix(framebuf.FrameBuffer):
     @micropython.native
     def show(self):
         self.__neopixel_draw(
-            int(self.brightness*1000) # Brightness multiplied by 1000 for fixed point calculations
-            )
-        self.neopixel.write()
-
-    @micropython.native
-    def slow_show(self):
-        buffer_index = 0
-        for i in reversed(range(0, len(self.buffer), 2)):
-            # Read two bytes and form a 16-bit RGB565 value
-            rgb565 = (self.buffer[i + 1] << 8) | self.buffer[i]
-
-            # Extract and scale RGB components
-            r = ((rgb565 >> 11) & 0x1F) * FIVERATIO
-            g = ((rgb565 >> 5) & 0x3F) * SIXRATIO
-            b = (rgb565 & 0x1F) * FIVERATIO
-
-            line_number = (buffer_index//self.width)+1
-            
-            r, g, b = (int(self.gamma_lut[c] * self.brightness) for c in (r, g, b))
-            
-            if (not (line_number & 1)):
-                line_index = buffer_index%self.width
-                self.neopixel[line_number*self.width - line_index - 1] = (r,g,b)
-            else:
-                self.neopixel[buffer_index] = (r,g,b)
-
-            buffer_index += 1        
+            int(self.brightness * 1000)
+        )
         self.neopixel.write()
 
 

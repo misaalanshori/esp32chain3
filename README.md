@@ -17,10 +17,23 @@
 - **Hold (600ms)**: Column 5 fills up as a hold meter. When full, flashes and opens the app.
 - **Exit app (optional)**: Holding BOOT for > 500ms exits back to the menu if the app uses `check_exit(btn)`.
 
-### Registered Apps:
+### Registered Apps (`apps.py`):
 1. `Rainbow`: Animated RGB wave on matrix.
 2. `JedagJedug`: Color wheel cycle across the strip.
 3. `BubbleLevel`: Interactive tilt level using MPU6050.
+
+## Architecture
+
+- `boot.py`: System startup entrypoint calling `main.main()`.
+- `main.py`: Orchestrates background network tasks and launches UI menu loop.
+- `apps.py`: Standalone application logic and palette functions.
+- `menu.py`: 3x5 font renderer, button polling, hold progress meter, and app lifecycle.
+- `neomatrix.py`: WS2812B serpentine matrix driver with viper-accelerated rendering.
+- `MPU6050.py`: Accelerometer and gyroscope I2C sensor driver.
+- `wifi_manager.py`: Multi-network STA/AP auto-reconnection and priority switcher.
+- `webserver.py`: Async web server serving dashboard, JSON state API, and SSE screen mirror.
+- `state.py`: Central shared system state and screen buffer pixel reader.
+- `secrets.py`: Local WiFi credentials (gitignored).
 
 ## Multi WiFi Manager (`wifi_manager.py`)
 
