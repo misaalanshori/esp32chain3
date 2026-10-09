@@ -31,18 +31,23 @@
 11. `WebTicker`: Live text marquee scroller with 3×5 font controlled via browser.
 12. `WebStudio`: Mood lamp and ambient lighting studio with live browser presets.
 
-## Architecture
+## Framework Architecture
 
-- `boot.py`: System startup entrypoint calling `main.main()`.
-- `main.py`: Orchestrates background network tasks and launches UI menu loop.
-- `apps.py`: Standalone application logic and palette functions.
-- `menu.py`: 3x5 font renderer, button polling, hold progress meter, and app lifecycle.
-- `neomatrix.py`: WS2812B serpentine matrix driver with viper-accelerated rendering.
-- `MPU6050.py`: Accelerometer and gyroscope I2C sensor driver.
-- `wifi_manager.py`: Multi-network STA/AP auto-reconnection and priority switcher.
-- `webserver.py`: Async web server serving dashboard, JSON state API, and SSE screen mirror.
-- `state.py`: Central shared system state and screen buffer pixel reader.
-- `secrets.py`: Local WiFi credentials (gitignored).
+Built on an embedded, decoupled **MVC + IoC/DI + AOP** framework on top of a unified cooperative `uasyncio` event loop:
+
+- **`container.py` (Inversion of Control & Dependency Injection)**: Central `Container` resolving singletons and factories (`state`, `matrix`, `imu`, `wifi`, `app_manager`, `webserver`).
+- **`dto.py` (Data Transfer Objects)**: Strictly-validated request/response DTOs (`LaunchRequestDto`, `PaintRequestDto`, `TickerRequestDto`, `StudioRequestDto`, `ApiResponseDto`).
+- **`aop.py` (Aspect-Oriented Programming)**:
+  - `@route(path, method)`: Declarative MVC route binding aspect.
+  - `@json_dto(DtoClass)`: Cross-cutting aspect automatically parsing/validating JSON payload into DTO.
+  - `@handle_errors`: Exception boundary aspect generating uniform error DTOs.
+  - `@timed`: Execution duration and telemetry aspect.
+- **`controllers.py` (MVC Controllers)**: `SystemController`, `AppController`, `StreamController`.
+- **`services.py` (Domain Services)**: `StateService`, `MatrixService`, `IMUService`, and `AppManager` (managing cooperative task preemption).
+- **`apps.py` (Cooperative Micro-Apps)**: All 12 apps run as non-blocking async tasks with cooperative preemption, yielding to the event loop on every frame.
+- **`menu.py` (Async Menu Engine)**: Non-blocking physical button polling and 3×5 / 2-digit number renderer.
+- **`webserver.py`**: Async HTTP server routing requests through controller actions and streaming views in 1460-byte chunks.
+- **`main.py`**: Framework bootstrap and unified single-loop `asyncio.gather()` runner (zero `_thread` stack overhead).
 
 ## Multi WiFi Manager (`wifi_manager.py`)
 

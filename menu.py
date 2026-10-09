@@ -1,9 +1,8 @@
-# menu.py - Lightweight menu system for 6x5 NeoMatrix
+# menu.py - Asynchronous, Non-Blocking Menu Engine
 import time
-import machine
-from state import system_state
+import asyncio
+from services import AppContext
 
-# 3x5 font bitmaps for digits 0-9 (5 rows x 3 bits wide)
 DIGITS = (
     (0b111, 0b101, 0b101, 0b101, 0b111),  # 0
     (0b010, 0b110, 0b010, 0b010, 0b111),  # 1
@@ -18,42 +17,16 @@ DIGITS = (
 )
 
 APP_COLORS = (
-    0x07FF,  # 1: Cyan
-    0x07E0,  # 2: Green
-    0xFFE0,  # 3: Yellow
-    0xF81F,  # 4: Magenta
-    0xFD20,  # 5: Orange
-    0x041F,  # 6: Blue
-    0xF800,  # 7: Red
-    0xFFFF,  # 8: White
-    0xFC18,  # 9: Pink
+    0x07FF, 0x07E0, 0xFFE0, 0xF81F, 0xFD20, 0x041F,
+    0xF800, 0xFFFF, 0xFC18, 0xFA60, 0x87E0, 0x781F
 )
 
-def check_exit(btn, hold_ms=500):
-    """Check if BOOT button is held to return to menu."""
-    if btn.value() == 0:
-        t0 = time.ticks_ms()
-        while btn.value() == 0:
-            if time.ticks_diff(time.ticks_ms(), t0) >= hold_ms:
-                while btn.value() == 0:
-                    time.sleep_ms(10)
-                time.sleep_ms(50)
-                return True
-            time.sleep_ms(10)
-    return False
-
 class Menu:
-    def __init__(self, matrix, btn_pin=9, hold_ms=600):
+    def __init__(self, matrix, app_manager, hold_ms=500):
         self.matrix = matrix
-        self.btn = machine.Pin(btn_pin, machine.Pin.IN, machine.Pin.PULL_UP)
+        self.app_manager = app_manager
         self.hold_ms = hold_ms
-        self.apps = []
         self.current = 0
-
-    def register(self, name, handler, color=None):
-        idx = len(self.apps)
-        c = color if color is not None else APP_COLORS[idx % len(APP_COLORS)]
-        self.apps.append({"name": name, "handler": handler, "color": c})
 
     def draw_digit(self, num, color, x_off=1):
         if num < 10:
@@ -63,10 +36,8 @@ class Menu:
                     if (row >> (2 - x)) & 1:
                         self.matrix.pixel(x_off + x, y, color)
         else:
-            # Tens digit: 1 at col 1
             for y in range(5):
                 self.matrix.pixel(1, y, color)
-            # Ones digit at cols 3, 4, 5
             rows = DIGITS[num % 10]
             for y, row in enumerate(rows):
                 for x in range(3):
@@ -75,70 +46,65 @@ class Menu:
 
     def draw_menu(self, dots=0):
         self.matrix.fill(0)
-        if not self.apps:
+        total = len(self.app_manager.catalog)
+        if total == 0:
             self.matrix.show()
             return
-        app = self.apps[self.current]
         num = self.current + 1
-        system_state.set_menu_index(num)
-        self.draw_digit(num, app["color"], x_off=1)
-        # Hold progress bar (col 5 for 1-9, col 0 for 10-12)
+        self.app_manager.state.set_menu_index(num)
+        col = APP_COLORS[self.current % len(APP_COLORS)]
+        self.draw_digit(num, col, x_off=1)
         meter_col = 0 if num >= 10 else 5
         for i in range(dots):
             self.matrix.pixel(meter_col, 4 - i, 0xFFFF)
         self.matrix.show()
 
-    def _launch_app(self, idx):
+    async def launch_app(self, idx):
+        if not (0 <= idx < len(self.app_manager.catalog)):
+            return
         self.current = idx
-        app = self.apps[idx]
-        system_state.set_active_app(app["name"])
+        name, handler = self.app_manager.catalog[idx]
+        self.app_manager.state.set_active_app(name)
         self.matrix.fill(0)
         self.matrix.show()
+
+        ctx = AppContext(self.matrix, self.app_manager.imu_service, self.app_manager.state, self.app_manager)
+        self.app_manager.active_ctx = ctx
+
         try:
-            app["handler"](self.matrix, self.btn)
-        except TypeError:
-            try:
-                app["handler"](self.matrix)
-            except TypeError:
-                app["handler"]()
+            await handler(ctx)
         except Exception as e:
-            print("App exception:", e)
-        system_state.set_active_app("Menu")
-        self.draw_menu()
+            print(f"App '{name}' error:", e)
+        finally:
+            self.app_manager.active_ctx = None
 
-    def run(self):
-        if not self.apps:
-            return
+        self.app_manager.state.set_active_app("Menu")
 
+    async def run_loop(self):
+        btn = self.app_manager.button
         self.draw_menu()
 
         while True:
-            # Check remote web launch request
-            if system_state.requested_app is not None:
-                req = system_state.requested_app
-                system_state.requested_app = None
+            # Check preemption / remote launch request
+            if self.app_manager.preempt_request is not None:
+                req = self.app_manager.preempt_request
+                self.app_manager.preempt_request = None
                 if req == "menu" or req == 0:
                     self.draw_menu()
                 else:
-                    target_idx = None
-                    if isinstance(req, int):
-                        if 1 <= req <= len(self.apps):
-                            target_idx = req - 1
-                    elif isinstance(req, str):
-                        for i, a in enumerate(self.apps):
-                            if a["name"].lower() == req.lower():
-                                target_idx = i
-                                break
+                    target_idx = self.app_manager.find_index(req)
                     if target_idx is not None:
-                        self._launch_app(target_idx)
+                        await self.launch_app(target_idx)
+                        self.draw_menu()
                         continue
 
-            if self.btn.value() == 0:
+            # Non-blocking physical button poll
+            if btn.value() == 0:
                 t0 = time.ticks_ms()
                 long_pressed = False
                 prev_dots = 0
 
-                while self.btn.value() == 0:
+                while btn.value() == 0:
                     held = time.ticks_diff(time.ticks_ms(), t0)
                     dots = min(5, (held * 5) // self.hold_ms)
                     if dots != prev_dots:
@@ -148,30 +114,23 @@ class Menu:
                     if held >= self.hold_ms:
                         long_pressed = True
                         break
-                    time.sleep_ms(20)
+                    await asyncio.sleep_ms(20)
 
                 if long_pressed:
-                    # Flash confirmation
                     self.matrix.fill(0xFFFF)
                     self.matrix.show()
-                    time.sleep_ms(60)
-                    self.matrix.fill(0)
-                    self.matrix.show()
-
-                    # Wait for button release
-                    while self.btn.value() == 0:
-                        time.sleep_ms(10)
-                    time.sleep_ms(50)
-
-                    # Launch app
-                    self._launch_app(self.current)
+                    await asyncio.sleep_ms(50)
+                    while btn.value() == 0:
+                        await asyncio.sleep_ms(10)
+                    await asyncio.sleep_ms(40)
+                    await self.launch_app(self.current)
+                    self.draw_menu()
                 else:
-                    # Short press: cycle to next app
                     if time.ticks_diff(time.ticks_ms(), t0) > 30:
-                        self.current = (self.current + 1) % len(self.apps)
+                        self.current = (self.current + 1) % len(self.app_manager.catalog)
                         self.draw_menu()
-                        while self.btn.value() == 0:
-                            time.sleep_ms(10)
-                        time.sleep_ms(50)
+                        while btn.value() == 0:
+                            await asyncio.sleep_ms(10)
+                        await asyncio.sleep_ms(40)
 
-            time.sleep_ms(30)
+            await asyncio.sleep_ms(25)

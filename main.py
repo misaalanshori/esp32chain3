@@ -1,43 +1,52 @@
-# main.py - Device entrypoint and system orchestration
-import machine
-import neopixel
-import _thread
+# main.py - Application Bootstrap & Unified Asynchronous Engine
 import asyncio
 
-from neomatrix import NeoMatrix
-from menu import Menu
+from container import ioc
+from services import StateService, MatrixService, IMUService, AppManager
 from wifi_manager import WiFiManager
-from webserver import run_server
-from state import system_state
-from apps import REGISTERED_APPS, MATRIX_WIDTH, MATRIX_HEIGHT
+from menu import Menu
+from webserver import WebServer
+from controllers import SystemController, AppController, StreamController
+from apps import REGISTERED_APPS
 
-async def _network_tasks():
-    wm = WiFiManager()
-    asyncio.create_task(wm.run_loop())
-    await run_server(port=80)
+def bootstrap_container():
+    """Initializes IoC container, services, controllers, and applications."""
+    # 1. Register Core Domain Services
+    state = ioc.register_singleton("state", StateService())
+    matrix = ioc.register_singleton("matrix", MatrixService(width=6, height=5, pin_id=7, brightness=0.3))
+    imu = ioc.register_singleton("imu", IMUService(pwr_pin=2, scl_pin=4, sda_pin=3))
+    state.matrix_service = matrix
 
-def start_background_services():
-    _thread.stack_size(14336)
-    _thread.start_new_thread(lambda: asyncio.run(_network_tasks()), ())
+    wifi = ioc.register_singleton("wifi", WiFiManager())
+    state.wifi_manager = wifi
+
+    app_mgr = ioc.register_singleton("app_manager", AppManager(matrix, imu, state, button_pin=9))
+    for name, handler in REGISTERED_APPS:
+        app_mgr.register(name, handler)
+
+    menu = ioc.register_singleton("menu", Menu(matrix, app_mgr, hold_ms=500))
+
+    # 2. Register WebServer & MVC Controllers
+    web = ioc.register_singleton("webserver", WebServer(ioc, port=80))
+    web.register_controller(SystemController(ioc))
+    web.register_controller(AppController(ioc))
+    web.register_controller(StreamController(ioc))
+
+    return wifi, web, menu
+
+async def main_async():
+    wifi, web, menu = bootstrap_container()
+    print("Framework initialized. Starting unified uasyncio event loop...")
+
+    # Run background WiFi, MVC Web Server, and Physical UI Menu cooperatively
+    await asyncio.gather(
+        wifi.run_loop(),
+        web.run_server(),
+        menu.run_loop(),
+    )
 
 def main():
-    # 1. Start background WiFi Manager and Async Web Server
-    start_background_services()
-
-    # 2. Setup NeoPixel Matrix
-    neo_pin = machine.Pin(7, machine.Pin.OUT)
-    neo_pixel = neopixel.NeoPixel(neo_pin, MATRIX_WIDTH * MATRIX_HEIGHT)
-    matrix = NeoMatrix(MATRIX_WIDTH, MATRIX_HEIGHT, neo_pixel)
-    matrix.set_brightness(0.3)
-    system_state.matrix = matrix
-
-    # 3. Setup Menu and register applications
-    system_state.set_registered_apps(REGISTERED_APPS)
-    menu = Menu(matrix, btn_pin=9, hold_ms=600)
-    for name, handler in REGISTERED_APPS:
-        menu.register(name, handler)
-
-    menu.run()
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()

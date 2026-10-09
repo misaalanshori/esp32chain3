@@ -2,7 +2,7 @@
 import network
 import asyncio
 import time
-from state import system_state
+from container import ioc
 
 try:
     from secrets import WIFI_NETWORKS
@@ -33,8 +33,9 @@ class WiFiManager:
         self.reconnect_count = 0
         self._running = True
 
-        # Attach to system state
-        system_state.wifi_manager = self
+        # Attach to StateService via IoC if available
+        if ioc.has("state"):
+            ioc.resolve("state").wifi_manager = self
 
     def get_state(self):
         if self.sta.isconnected():

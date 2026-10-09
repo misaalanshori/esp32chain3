@@ -1,10 +1,7 @@
-# webserver.py - Async Web Server with SSE Screen Mirroring, Web Controllers & Dashboard
+# webserver.py - Async MVC Web Server Engine with Chunked Streaming & Route Dispatching
 import asyncio
-import json
-import time
-import ubinascii
 import gc
-from state import system_state
+from aop import ROUTES
 
 HTML_DASHBOARD = """<!DOCTYPE html>
 <html lang="en">
@@ -60,7 +57,6 @@ button:hover{background:#30363d}
 .paint-cell{width:28px;height:28px;border-radius:4px;background:#161b22;border:1px solid #21262d;cursor:pointer}
 .palette{display:grid;grid-template-columns:repeat(5,24px);gap:4px}
 .swatch{width:24px;height:24px;border-radius:4px;cursor:pointer;border:1px solid #000}
-.swatch.sel{border:2px solid #fff}
 .eff-btn{background:#161b22;color:var(--sub);border:1px solid var(--border);padding:6px 10px;border-radius:6px;cursor:pointer}
 .eff-btn.active{border-color:var(--amber);color:var(--amber);background:rgba(210,153,34,0.15)}
 </style>
@@ -92,14 +88,13 @@ button:hover{background:#30363d}
     <button class="tab-btn" id="btn-studio" onclick="switchTab('studio')">WebStudio (12)</button>
   </div>
 
-  <!-- Panel: WebPaint -->
   <div id="panel-paint">
     <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
       <div>
         <div class="paint-grid" id="paintCanvas"></div>
         <div style="display:flex;gap:6px;margin-top:8px">
           <button onclick="clearCanvas()">Clear</button>
-          <button onclick="sendCanvas()" style="background:var(--blue);color:#fff">Send to Device</button>
+          <button onclick="sendCanvas()" style="background:var(--blue);color:#fff">Send & Launch</button>
         </div>
       </div>
       <div>
@@ -110,7 +105,6 @@ button:hover{background:#30363d}
     </div>
   </div>
 
-  <!-- Panel: WebTicker -->
   <div id="panel-ticker" style="display:none">
     <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <input type="text" id="tickerInput" value="HELLO ESP32" placeholder="Scroll text..." style="flex:1;min-width:180px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px">
@@ -127,7 +121,6 @@ button:hover{background:#30363d}
     </div>
   </div>
 
-  <!-- Panel: WebStudio -->
   <div id="panel-studio" style="display:none">
     <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
       <button class="eff-btn active" id="eff-candle" onclick="pickEff('candle', this)">Candle</button>
@@ -203,7 +196,6 @@ button:hover{background:#30363d}
 </div>
 
 <script>
-// Build 30 LEDs for Live Mirror
 const grid = document.getElementById('matrixGrid');
 for(let i=0; i<30; i++){
   const d = document.createElement('div');
@@ -212,7 +204,6 @@ for(let i=0; i<30; i++){
 }
 const leds = grid.children;
 
-// Binary SSE Parser for 30 RGB triplets (90 bytes base64)
 function renderBinaryScreen(b64){
   try{
     const b = atob(b64.trim());
@@ -247,7 +238,6 @@ function startSSE(){
 }
 startSSE();
 
-// WebPaint Canvas
 let paintColor = '#00ffff';
 const paintBuf = Array(30).fill('#000000');
 const paintGrid = document.getElementById('paintCanvas');
@@ -284,10 +274,8 @@ function clearCanvas(){
 }
 async function sendCanvas(){
   await fetch('/api/paint', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pixels:paintBuf})});
-  launchApp(10);
 }
 
-// WebTicker
 function presetTicker(t){
   document.getElementById('tickerInput').value = t;
   sendTicker();
@@ -296,10 +284,8 @@ async function sendTicker(){
   const t = document.getElementById('tickerInput').value;
   const c = document.getElementById('tickerColor').value;
   await fetch('/api/ticker', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:t, color:c})});
-  launchApp(11);
 }
 
-// WebStudio
 let curEff = 'candle';
 function pickEff(e, btn){
   curEff = e;
@@ -310,7 +296,6 @@ function pickEff(e, btn){
 async function sendStudio(){
   const c = document.getElementById('studioColor').value;
   await fetch('/api/studio', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({effect:curEff, color:c})});
-  launchApp(12);
 }
 
 async function launchApp(target){
@@ -320,7 +305,6 @@ async function launchApp(target){
   }catch(e){}
 }
 
-// Tab Switching
 function switchTab(t){
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('btn-' + t).classList.add('active');
@@ -429,138 +413,98 @@ updateState();
 HTML_BYTES = HTML_DASHBOARD.encode("utf-8")
 HTML_HDR = f"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nContent-Length: {len(HTML_BYTES)}\r\n\r\n".encode("utf-8")
 
-async def _stream_sse(writer):
-    try:
-        headers = (
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/event-stream\r\n"
-            "Cache-Control: no-cache\r\n"
-            "Connection: keep-alive\r\n"
-            "Access-Control-Allow-Origin: *\r\n\r\n"
-        )
-        writer.write(headers.encode("utf-8"))
-        await writer.drain()
+class HttpRequest:
+    def __init__(self, method, path, headers, body, writer):
+        self.method = method
+        self.path = path
+        self.headers = headers
+        self.body = body
+        self.writer = writer
 
-        last_raw = bytearray(90)
-        last_heartbeat = time.ticks_ms()
-        while True:
-            curr = system_state.get_screen_raw()
-            now = time.ticks_ms()
-            if curr != last_raw or time.ticks_diff(now, last_heartbeat) > 4000:
-                b64 = ubinascii.b2a_base64(curr)
-                writer.write(b"data: " + b64 + b"\n")
-                await writer.drain()
-                last_raw[:] = curr
-                last_heartbeat = now
-            await asyncio.sleep_ms(60)
-    except Exception:
-        pass
+class WebServer:
+    def __init__(self, ioc, port=80):
+        self.ioc = ioc
+        self.port = port
+        self.routes = []
 
-async def handle_client(reader, writer):
-    try:
-        req_line = await reader.readline()
-        if not req_line:
-            writer.close()
-            return
+    def register_controller(self, controller_instance):
+        cls = controller_instance.__class__
+        for method, path, fn in ROUTES:
+            for attr in dir(cls):
+                if getattr(cls, attr) == fn:
+                    self.routes.append((method, path, controller_instance, fn))
+                    break
 
-        parts = req_line.decode("utf-8", "ignore").split()
-        if len(parts) < 2:
-            writer.close()
-            return
+    async def _dispatch(self, request):
+        for method, route_path, ctrl, action in self.routes:
+            if method == request.method and route_path == request.path:
+                return await action(ctrl, request)
+        return 404, "text/plain", "Not Found"
 
-        method, path = parts[0], parts[1]
-
-        # Drain headers and parse content-length
-        content_len = 0
-        while True:
-            line = await reader.readline()
-            if not line or line == b"\r\n" or line == b"\n":
-                break
-            if line.lower().startswith(b"content-length:"):
-                try:
-                    content_len = int(line.split(b":")[1].strip())
-                except Exception:
-                    pass
-
-        body = b""
-        if content_len > 0:
-            body = await reader.readexactly(content_len)
-
-        if method == "OPTIONS":
-            writer.write(b"HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n")
-        elif method == "POST":
-            try:
-                data = json.loads(body.decode("utf-8")) if body else {}
-                if path == "/api/paint":
-                    if "pixels" in data:
-                        system_state.paint_frames = [data["pixels"]]
-                    if "frames" in data:
-                        system_state.paint_frames = data["frames"]
-                    if "speed" in data:
-                        system_state.paint_speed = int(data["speed"])
-                elif path == "/api/ticker":
-                    if "text" in data:
-                        system_state.ticker_text = str(data["text"])
-                    if "color" in data:
-                        system_state.ticker_color = str(data["color"])
-                    if "speed" in data:
-                        system_state.ticker_speed = int(data["speed"])
-                elif path == "/api/studio":
-                    if "effect" in data:
-                        system_state.studio_effect = str(data["effect"])
-                    if "color" in data:
-                        system_state.studio_color = str(data["color"])
-                    if "speed" in data:
-                        system_state.studio_speed = int(data["speed"])
-                elif path == "/api/launch":
-                    target = data.get("app") if "app" in data else data.get("name")
-                    if target is not None:
-                        system_state.request_app(target)
-
-                resp = b'{"ok": true}'
-                hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(resp)}\r\n\r\n".encode("utf-8")
-                writer.write(hdr + resp)
-            except Exception as e:
-                resp = b'{"ok": false}'
-                hdr = f"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(resp)}\r\n\r\n".encode("utf-8")
-                writer.write(hdr + resp)
-        elif path == "/events" or path == "/api/events":
-            await _stream_sse(writer)
-            return
-        elif path == "/api/state":
-            body_json = json.dumps(system_state.get_summary()).encode("utf-8")
-            hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(body_json)}\r\n\r\n".encode("utf-8")
-            writer.write(hdr + body_json)
-        elif path == "/api/scan":
-            results = system_state.wifi_manager.scan() if system_state.wifi_manager else []
-            body_json = json.dumps(results).encode("utf-8")
-            hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(body_json)}\r\n\r\n".encode("utf-8")
-            writer.write(hdr + body_json)
-        elif path == "/" or path == "/index.html":
-            writer.write(HTML_HDR)
-            await writer.drain()
-            CHUNK_SIZE = 1460
-            for i in range(0, len(HTML_BYTES), CHUNK_SIZE):
-                writer.write(HTML_BYTES[i:i + CHUNK_SIZE])
-                await writer.drain()
-        else:
-            msg = b"Not Found"
-            hdr = f"HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: {len(msg)}\r\n\r\n".encode("utf-8")
-            writer.write(hdr + msg)
-
-        await writer.drain()
-        gc.collect()
-    except Exception:
-        pass
-    finally:
+    async def handle_client(self, reader, writer):
         try:
-            writer.close()
-            await writer.wait_closed()
+            req_line = await reader.readline()
+            if not req_line:
+                writer.close()
+                return
+
+            parts = req_line.decode("utf-8", "ignore").split()
+            if len(parts) < 2:
+                writer.close()
+                return
+
+            method, path = parts[0], parts[1]
+
+            # Read headers
+            headers = {}
+            content_len = 0
+            while True:
+                line = await reader.readline()
+                if not line or line == b"\r\n" or line == b"\n":
+                    break
+                if line.lower().startswith(b"content-length:"):
+                    try:
+                        content_len = int(line.split(b":")[1].strip())
+                    except Exception:
+                        pass
+
+            body = b""
+            if content_len > 0:
+                body = await reader.readexactly(content_len)
+
+            request = HttpRequest(method, path, headers, body, writer)
+
+            if method == "OPTIONS":
+                writer.write(b"HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n")
+            elif path == "/" or path == "/index.html":
+                # Static MVC View streaming
+                writer.write(HTML_HDR)
+                await writer.drain()
+                CHUNK_SIZE = 1460
+                for i in range(0, len(HTML_BYTES), CHUNK_SIZE):
+                    writer.write(HTML_BYTES[i:i + CHUNK_SIZE])
+                    await writer.drain()
+            else:
+                # Dispatch through AOP Route Table
+                code, ctype, res_body = await self._dispatch(request)
+                if code is not None:
+                    res_bytes = res_body.encode("utf-8") if isinstance(res_body, str) else res_body
+                    hdr = f"HTTP/1.1 {code} OK\r\nContent-Type: {ctype}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(res_bytes)}\r\n\r\n".encode("utf-8")
+                    writer.write(hdr + res_bytes)
+
+            await writer.drain()
+            gc.collect()
         except Exception:
             pass
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
 
-async def run_server(port=80):
-    server = await asyncio.start_server(handle_client, "0.0.0.0", port)
-    print(f"Async web server listening on port {port}")
-    while True:
-        await asyncio.sleep(1)
+    async def run_server(self):
+        server = await asyncio.start_server(self.handle_client, "0.0.0.0", self.port)
+        print(f"MVC WebServer listening on port {self.port}")
+        while True:
+            await asyncio.sleep(1)
