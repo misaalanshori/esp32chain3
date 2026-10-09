@@ -56,11 +56,22 @@ class Menu:
         self.apps.append({"name": name, "handler": handler, "color": c})
 
     def draw_digit(self, num, color, x_off=1):
-        rows = DIGITS[num % 10]
-        for y, row in enumerate(rows):
-            for x in range(3):
-                if (row >> (2 - x)) & 1:
-                    self.matrix.pixel(x_off + x, y, color)
+        if num < 10:
+            rows = DIGITS[num % 10]
+            for y, row in enumerate(rows):
+                for x in range(3):
+                    if (row >> (2 - x)) & 1:
+                        self.matrix.pixel(x_off + x, y, color)
+        else:
+            # Tens digit: 1 at col 1
+            for y in range(5):
+                self.matrix.pixel(1, y, color)
+            # Ones digit at cols 3, 4, 5
+            rows = DIGITS[num % 10]
+            for y, row in enumerate(rows):
+                for x in range(3):
+                    if (row >> (2 - x)) & 1:
+                        self.matrix.pixel(3 + x, y, color)
 
     def draw_menu(self, dots=0):
         self.matrix.fill(0)
@@ -71,9 +82,10 @@ class Menu:
         num = self.current + 1
         system_state.set_menu_index(num)
         self.draw_digit(num, app["color"], x_off=1)
-        # Hold progress bar on column 5 (bottom to top)
+        # Hold progress bar (col 5 for 1-9, col 0 for 10-12)
+        meter_col = 0 if num >= 10 else 5
         for i in range(dots):
-            self.matrix.pixel(5, 4 - i, 0xFFFF)
+            self.matrix.pixel(meter_col, 4 - i, 0xFFFF)
         self.matrix.show()
 
     def run(self):

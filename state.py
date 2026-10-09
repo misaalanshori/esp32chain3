@@ -28,6 +28,16 @@ class SystemState:
             "temp": 0.0,
             "active": False,
         }
+        # Web app states
+        self.paint_frames = [["#000000"] * 30]
+        self.paint_speed = 200
+        self.ticker_text = "HELLO ESP32"
+        self.ticker_color = "#00ffff"
+        self.ticker_speed = 70
+        self.studio_effect = "candle"
+        self.studio_color = "#ff8800"
+        self.studio_speed = 40
+        self.studio_brightness = 0.8
 
     def set_active_app(self, name):
         self.active_app = name

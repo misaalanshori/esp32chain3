@@ -543,8 +543,210 @@ def app_reflex(matrix, btn):
             # Timed out
             time.sleep_ms(500)
 
+# Helper to parse hex color
+def parse_hex_color(hex_str):
+    try:
+        s = hex_str.lstrip('#')
+        if len(s) == 6:
+            return int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+    except Exception:
+        pass
+    return 255, 255, 255
+
 # ==========================================
-# Full 9 Registered Apps
+# App 10: WebPaint (Canvas & Frame Animator)
+# ==========================================
+def app_paint(matrix, btn):
+    frame_idx = 0
+    last_frame_time = time.ticks_ms()
+
+    while True:
+        act = poll_btn(btn)
+        if act == "exit":
+            break
+        if act == "tap":
+            if len(system_state.paint_frames) > 1:
+                frame_idx = (frame_idx + 1) % len(system_state.paint_frames)
+            else:
+                system_state.paint_frames = [["#000000"] * 30]
+
+        frames = system_state.paint_frames
+        speed = max(40, system_state.paint_speed)
+
+        if len(frames) > 1:
+            if time.ticks_diff(time.ticks_ms(), last_frame_time) >= speed:
+                frame_idx = (frame_idx + 1) % len(frames)
+                last_frame_time = time.ticks_ms()
+        else:
+            frame_idx = 0
+
+        current_frame = frames[frame_idx % len(frames)]
+        matrix.fill(0)
+        for i, c in enumerate(current_frame):
+            if i < 30 and c != "#000000":
+                r, g, b = parse_hex_color(c)
+                matrix.pixel(i % 6, i // 6, rgb_to_rgb565(r, g, b))
+        matrix.show()
+        time.sleep_ms(30)
+
+# ==========================================
+# App 11: WebTicker (Marquee Text Scroller)
+# ==========================================
+FONT_3x5 = {
+    'A': (0b010, 0b101, 0b111, 0b101, 0b101),
+    'B': (0b110, 0b101, 0b110, 0b101, 0b110),
+    'C': (0b011, 0b100, 0b100, 0b100, 0b011),
+    'D': (0b110, 0b101, 0b101, 0b101, 0b110),
+    'E': (0b111, 0b100, 0b110, 0b100, 0b111),
+    'F': (0b111, 0b100, 0b110, 0b100, 0b100),
+    'G': (0b011, 0b100, 0b101, 0b101, 0b011),
+    'H': (0b101, 0b101, 0b111, 0b101, 0b101),
+    'I': (0b111, 0b010, 0b010, 0b010, 0b111),
+    'J': (0b001, 0b001, 0b001, 0b101, 0b010),
+    'K': (0b101, 0b110, 0b100, 0b110, 0b101),
+    'L': (0b100, 0b100, 0b100, 0b100, 0b111),
+    'M': (0b101, 0b111, 0b101, 0b101, 0b101),
+    'N': (0b101, 0b111, 0b111, 0b101, 0b101),
+    'O': (0b010, 0b101, 0b101, 0b101, 0b010),
+    'P': (0b110, 0b101, 0b110, 0b100, 0b100),
+    'Q': (0b010, 0b101, 0b101, 0b110, 0b011),
+    'R': (0b110, 0b101, 0b110, 0b101, 0b101),
+    'S': (0b011, 0b100, 0b010, 0b001, 0b110),
+    'T': (0b111, 0b010, 0b010, 0b010, 0b010),
+    'U': (0b101, 0b101, 0b101, 0b101, 0b010),
+    'V': (0b101, 0b101, 0b101, 0b101, 0b010),
+    'W': (0b101, 0b101, 0b101, 0b111, 0b101),
+    'X': (0b101, 0b101, 0b010, 0b101, 0b101),
+    'Y': (0b101, 0b101, 0b010, 0b010, 0b010),
+    'Z': (0b111, 0b001, 0b010, 0b100, 0b111),
+    '0': (0b111, 0b101, 0b101, 0b101, 0b111),
+    '1': (0b010, 0b110, 0b010, 0b010, 0b111),
+    '2': (0b111, 0b001, 0b111, 0b100, 0b111),
+    '3': (0b111, 0b001, 0b111, 0b001, 0b111),
+    '4': (0b101, 0b101, 0b111, 0b001, 0b001),
+    '5': (0b111, 0b100, 0b111, 0b001, 0b111),
+    '6': (0b111, 0b100, 0b111, 0b101, 0b111),
+    '7': (0b111, 0b001, 0b001, 0b001, 0b001),
+    '8': (0b111, 0b101, 0b111, 0b101, 0b111),
+    '9': (0b111, 0b101, 0b111, 0b001, 0b111),
+    ' ': (0b000, 0b000, 0b000, 0b000, 0b000),
+    '!': (0b010, 0b010, 0b010, 0b000, 0b010),
+    '?': (0b110, 0b001, 0b010, 0b000, 0b010),
+    '-': (0b000, 0b000, 0b111, 0b000, 0b000),
+    ':': (0b000, 0b010, 0b000, 0b010, 0b000),
+    '.': (0b000, 0b000, 0b000, 0b000, 0b010),
+}
+
+def app_ticker(matrix, btn):
+    paused = False
+    last_text = ""
+    col_bits = []
+
+    def rebuild(txt):
+        nonlocal col_bits, last_text
+        last_text = txt
+        col_bits = [[] for _ in range(5)]
+        for y in range(5):
+            col_bits[y].extend([0] * 6)
+        for ch in txt.upper():
+            glyph = FONT_3x5.get(ch, FONT_3x5.get(' ', (0,0,0,0,0)))
+            for y in range(5):
+                r = glyph[y]
+                col_bits[y].extend([(r >> 2) & 1, (r >> 1) & 1, r & 1, 0])
+        for y in range(5):
+            col_bits[y].extend([0] * 6)
+
+    rebuild(system_state.ticker_text)
+    col_idx = 0
+
+    while True:
+        act = poll_btn(btn)
+        if act == "exit":
+            break
+        if act == "tap":
+            paused = not paused
+
+        if system_state.ticker_text != last_text:
+            rebuild(system_state.ticker_text)
+            col_idx = 0
+
+        r, g, b = parse_hex_color(system_state.ticker_color)
+        c565 = rgb_to_rgb565(r, g, b)
+
+        matrix.fill(0)
+        total_cols = len(col_bits[0])
+        if total_cols > 6:
+            for x in range(6):
+                src_x = (col_idx + x) % total_cols
+                for y in range(5):
+                    if col_bits[y][src_x]:
+                        matrix.pixel(x, y, c565)
+        matrix.show()
+
+        if not paused and total_cols > 6:
+            col_idx = (col_idx + 1) % total_cols
+
+        time.sleep_ms(max(30, system_state.ticker_speed))
+
+# ==========================================
+# App 12: WebStudio (Mood Lamp & Pattern Studio)
+# ==========================================
+def app_studio(matrix, btn):
+    effects = ["candle", "breath", "strobe", "wave", "solid"]
+    step = 0
+
+    while True:
+        act = poll_btn(btn)
+        if act == "exit":
+            break
+        if act == "tap":
+            curr_i = effects.index(system_state.studio_effect) if system_state.studio_effect in effects else 0
+            system_state.studio_effect = effects[(curr_i + 1) % len(effects)]
+
+        eff = system_state.studio_effect
+        r0, g0, b0 = parse_hex_color(system_state.studio_color)
+        speed = max(20, system_state.studio_speed)
+
+        matrix.fill(0)
+        if eff == "solid":
+            c = rgb_to_rgb565(r0, g0, b0)
+            matrix.fill(c)
+        elif eff == "candle":
+            for x in range(6):
+                for y in range(5):
+                    flick = urandom.getrandbits(5)
+                    rf = max(0, min(255, r0 - flick))
+                    gf = max(0, min(255, g0 - flick * 2))
+                    bf = max(0, min(255, b0 - flick * 3))
+                    matrix.pixel(x, y, rgb_to_rgb565(rf, gf, bf))
+        elif eff == "breath":
+            phase = (step % 40)
+            factor = (phase / 20.0) if phase < 20 else (2.0 - phase / 20.0)
+            factor = max(0.1, min(1.0, factor))
+            c = rgb_to_rgb565(int(r0 * factor), int(g0 * factor), int(b0 * factor))
+            matrix.fill(c)
+        elif eff == "strobe":
+            if (step % 2) == 0:
+                for x in range(3):
+                    for y in range(5):
+                        matrix.pixel(x, y, 0xF800)
+            else:
+                for x in range(3, 6):
+                    for y in range(5):
+                        matrix.pixel(x, y, 0x001F)
+        elif eff == "wave":
+            for x in range(6):
+                col_factor = ((x + step) % 6) / 5.0
+                c = rgb_to_rgb565(int(r0 * col_factor), int(g0 * col_factor), int(b0 * col_factor))
+                for y in range(5):
+                    matrix.pixel(x, y, c)
+
+        matrix.show()
+        step += 1
+        time.sleep_ms(speed)
+
+# ==========================================
+# Full 12 Registered Apps
 # ==========================================
 REGISTERED_APPS = (
     ("Rainbow", app_rainbow),
@@ -556,4 +758,7 @@ REGISTERED_APPS = (
     ("GameOfLife", app_life),
     ("FireSim", app_fire),
     ("ReflexGame", app_reflex),
+    ("WebPaint", app_paint),
+    ("WebTicker", app_ticker),
+    ("WebStudio", app_studio),
 )

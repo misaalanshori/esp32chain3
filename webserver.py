@@ -1,4 +1,4 @@
-# webserver.py - Async Web Server with SSE Screen Mirroring, Live Dashboard and JSON State API
+# webserver.py - Async Web Server with SSE Screen Mirroring, Web Controllers & Dashboard
 import asyncio
 import json
 import time
@@ -36,7 +36,7 @@ h1{font-size:1.25rem;font-weight:600;display:flex;align-items:center;gap:8px}
 table{width:100%;border-collapse:collapse;margin-top:8px;font-size:0.8rem}
 th,td{padding:6px 4px;text-align:left;border-bottom:1px solid var(--border)}
 th{color:var(--sub);font-weight:500}
-button{background:#21262d;color:var(--blue);border:1px solid var(--border);padding:4px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer}
+button{background:#21262d;color:var(--blue);border:1px solid var(--border);padding:6px 12px;border-radius:6px;font-size:0.75rem;cursor:pointer}
 button:hover{background:#30363d}
 
 /* Mirror Styles */
@@ -47,11 +47,22 @@ button:hover{background:#30363d}
 .sse-dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
 
 /* App List Styles */
-.app-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:10px}
-.app-item{background:#0e131a;border:1px solid var(--border);border-radius:6px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:0.85rem;transition:all 0.2s}
+.app-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-top:10px}
+.app-item{background:#0e131a;border:1px solid var(--border);border-radius:6px;padding:8px 10px;display:flex;align-items:center;justify-content:space-between;font-size:0.85rem;transition:all 0.2s}
 .app-item.active{border-color:var(--green);background:rgba(63,185,80,0.12);box-shadow:0 0 10px rgba(63,185,80,0.2)}
 .app-item.selected{border-color:var(--blue);background:rgba(88,166,255,0.12);box-shadow:0 0 8px rgba(88,166,255,0.2)}
-.app-id{background:#21262d;color:var(--text);padding:2px 7px;border-radius:4px;font-weight:bold;font-size:0.75rem;margin-right:8px}
+.app-id{background:#21262d;color:var(--text);padding:2px 6px;border-radius:4px;font-weight:bold;font-size:0.75rem;margin-right:6px}
+
+/* Web Controllers UI */
+.tab-btn{background:#161b22;color:var(--sub);border:1px solid var(--border);padding:6px 14px;border-radius:6px;font-size:0.8rem;cursor:pointer}
+.tab-btn.active{background:#21262d;color:var(--blue);border-color:var(--blue)}
+.paint-grid{display:grid;grid-template-columns:repeat(6,28px);gap:4px;background:#090d13;padding:8px;border-radius:8px;border:1px solid var(--border)}
+.paint-cell{width:28px;height:28px;border-radius:4px;background:#161b22;border:1px solid #21262d;cursor:pointer}
+.palette{display:grid;grid-template-columns:repeat(5,24px);gap:4px}
+.swatch{width:24px;height:24px;border-radius:4px;cursor:pointer;border:1px solid #000}
+.swatch.sel{border:2px solid #fff}
+.eff-btn{background:#161b22;color:var(--sub);border:1px solid var(--border);padding:6px 10px;border-radius:6px;cursor:pointer}
+.eff-btn.active{border-color:var(--amber);color:var(--amber);background:rgba(210,153,34,0.15)}
 </style>
 </head>
 <body>
@@ -67,6 +78,71 @@ button:hover{background:#30363d}
   </h2>
   <div class="mirror-box">
     <div class="matrix-grid" id="matrixGrid"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <h2>
+    <span>Web Controller Interfaces</span>
+    <span style="font-size:0.75rem;color:var(--sub)">Apps 10 &ndash; 12</span>
+  </h2>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="tab-btn active" id="btn-paint" onclick="switchTab('paint')">WebPaint (10)</button>
+    <button class="tab-btn" id="btn-ticker" onclick="switchTab('ticker')">WebTicker (11)</button>
+    <button class="tab-btn" id="btn-studio" onclick="switchTab('studio')">WebStudio (12)</button>
+  </div>
+
+  <!-- Panel: WebPaint -->
+  <div id="panel-paint">
+    <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+      <div>
+        <div class="paint-grid" id="paintCanvas"></div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button onclick="clearCanvas()">Clear</button>
+          <button onclick="sendCanvas()" style="background:var(--blue);color:#fff">Send to Device</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:0.8rem;color:var(--sub);margin-bottom:6px">Palette:</div>
+        <div class="palette" id="paletteBox"></div>
+        <input type="color" id="customColor" value="#00ffff" style="margin-top:6px;width:100%;height:28px;background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer" onchange="pickColor(this.value)">
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel: WebTicker -->
+  <div id="panel-ticker" style="display:none">
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <input type="text" id="tickerInput" value="HELLO ESP32" placeholder="Scroll text..." style="flex:1;min-width:180px;background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px">
+      <input type="color" id="tickerColor" value="#00ffff" style="height:34px;width:44px;background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer">
+      <button onclick="sendTicker()" style="background:var(--blue);color:#fff">Send & Scroll</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <span style="font-size:0.75rem;color:var(--sub);align-self:center">Presets:</span>
+      <button onclick="presetTicker('HELLO')">HELLO</button>
+      <button onclick="presetTicker('AFK')">AFK</button>
+      <button onclick="presetTicker('BUSY')">BUSY</button>
+      <button onclick="presetTicker('COFFEE')">COFFEE</button>
+      <button onclick="presetTicker('ONLINE')">ONLINE</button>
+    </div>
+  </div>
+
+  <!-- Panel: WebStudio -->
+  <div id="panel-studio" style="display:none">
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="eff-btn active" id="eff-candle" onclick="pickEff('candle', this)">Candle</button>
+      <button class="eff-btn" id="eff-breath" onclick="pickEff('breath', this)">Breathing</button>
+      <button class="eff-btn" id="eff-strobe" onclick="pickEff('strobe', this)">Strobe</button>
+      <button class="eff-btn" id="eff-wave" onclick="pickEff('wave', this)">Wave</button>
+      <button class="eff-btn" id="eff-solid" onclick="pickEff('solid', this)">Solid</button>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:0.8rem;color:var(--sub)">Color:</span>
+        <input type="color" id="studioColor" value="#ff8800" style="height:32px;width:44px;background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer" onchange="sendStudio()">
+      </div>
+      <button onclick="sendStudio()" style="background:var(--blue);color:#fff">Apply Effect</button>
+    </div>
   </div>
 </div>
 
@@ -108,7 +184,7 @@ button:hover{background:#30363d}
 <div class="card" style="margin-top:14px">
   <h2>
     <span>Registered Applications</span>
-    <span id="appSummary" style="font-size:0.75rem;color:var(--sub)">9 Apps</span>
+    <span id="appSummary" style="font-size:0.75rem;color:var(--sub)">12 Apps</span>
   </h2>
   <div class="app-list" id="appList">
     <div style="color:var(--sub);font-size:0.85rem">Loading apps...</div>
@@ -124,7 +200,7 @@ button:hover{background:#30363d}
 </div>
 
 <script>
-// Build 30 LEDs
+// Build 30 LEDs for Live Mirror
 const grid = document.getElementById('matrixGrid');
 for(let i=0; i<30; i++){
   const d = document.createElement('div');
@@ -133,7 +209,7 @@ for(let i=0; i<30; i++){
 }
 const leds = grid.children;
 
-// Binary SSE Parser for 30 RGB triplets (90 bytes base64-encoded)
+// Binary SSE Parser for 30 RGB triplets (90 bytes base64)
 function renderBinaryScreen(b64){
   try{
     const b = atob(b64.trim());
@@ -155,7 +231,6 @@ function renderBinaryScreen(b64){
   }catch(err){}
 }
 
-// Server-Sent Events (SSE) with Binary Base64 Payload
 let sseSource = null;
 function startSSE(){
   try{
@@ -164,12 +239,82 @@ function startSSE(){
     sseSource.onmessage = function(e){
       renderBinaryScreen(e.data);
     };
-    sseSource.onerror = function(){
-      // Reconnect handled automatically by browser EventSource
-    };
+    sseSource.onerror = function(){};
   }catch(e){}
 }
 startSSE();
+
+// WebPaint Canvas
+let paintColor = '#00ffff';
+const paintBuf = Array(30).fill('#000000');
+const paintGrid = document.getElementById('paintCanvas');
+let isMouseDown = false;
+document.body.onmousedown = () => isMouseDown = true;
+document.body.onmouseup = () => isMouseDown = false;
+
+for(let i=0; i<30; i++){
+  const c = document.createElement('div');
+  c.className = 'paint-cell';
+  c.onmousedown = () => { paintBuf[i] = paintColor; c.style.backgroundColor = paintColor; };
+  c.onmouseenter = () => { if(isMouseDown){ paintBuf[i] = paintColor; c.style.backgroundColor = paintColor; } };
+  paintGrid.appendChild(c);
+}
+
+const paletteColors = ['#ff0000','#ff8800','#ffff00','#00ff00','#00ffff','#0088ff','#aa00ff','#ffffff','#555555','#000000'];
+const palBox = document.getElementById('paletteBox');
+paletteColors.forEach(col => {
+  const s = document.createElement('div');
+  s.className = 'swatch';
+  s.style.backgroundColor = col;
+  s.onclick = () => pickColor(col);
+  palBox.appendChild(s);
+});
+
+function pickColor(c){
+  paintColor = c;
+  document.getElementById('customColor').value = c;
+}
+function clearCanvas(){
+  paintBuf.fill('#000000');
+  Array.from(paintGrid.children).forEach(c => c.style.backgroundColor = '#161b22');
+  sendCanvas();
+}
+async function sendCanvas(){
+  await fetch('/api/paint', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pixels:paintBuf})});
+}
+
+// WebTicker
+function presetTicker(t){
+  document.getElementById('tickerInput').value = t;
+  sendTicker();
+}
+async function sendTicker(){
+  const t = document.getElementById('tickerInput').value;
+  const c = document.getElementById('tickerColor').value;
+  await fetch('/api/ticker', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:t, color:c})});
+}
+
+// WebStudio
+let curEff = 'candle';
+function pickEff(e, btn){
+  curEff = e;
+  document.querySelectorAll('.eff-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  sendStudio();
+}
+async function sendStudio(){
+  const c = document.getElementById('studioColor').value;
+  await fetch('/api/studio', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({effect:curEff, color:c})});
+}
+
+// Tab Switching
+function switchTab(t){
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + t).classList.add('active');
+  document.getElementById('panel-paint').style.display = (t==='paint')?'block':'none';
+  document.getElementById('panel-ticker').style.display = (t==='ticker')?'block':'none';
+  document.getElementById('panel-studio').style.display = (t==='studio')?'block':'none';
+}
 
 function fmtUptime(s){
   const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
@@ -312,26 +457,75 @@ async def handle_client(reader, writer):
 
         method, path = parts[0], parts[1]
 
-        # Drain headers
+        # Drain headers and parse content-length
+        content_len = 0
         while True:
             line = await reader.readline()
             if not line or line == b"\r\n" or line == b"\n":
                 break
+            if line.lower().startswith(b"content-length:"):
+                try:
+                    content_len = int(line.split(b":")[1].strip())
+                except Exception:
+                    pass
 
-        if path == "/events" or path == "/api/events":
+        body = b""
+        if content_len > 0:
+            body = await reader.readexactly(content_len)
+
+        if method == "OPTIONS":
+            writer.write(b"HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n")
+        elif method == "POST":
+            try:
+                data = json.loads(body.decode("utf-8")) if body else {}
+                if path == "/api/paint":
+                    if "pixels" in data:
+                        system_state.paint_frames = [data["pixels"]]
+                    if "frames" in data:
+                        system_state.paint_frames = data["frames"]
+                    if "speed" in data:
+                        system_state.paint_speed = int(data["speed"])
+                elif path == "/api/ticker":
+                    if "text" in data:
+                        system_state.ticker_text = str(data["text"])
+                    if "color" in data:
+                        system_state.ticker_color = str(data["color"])
+                    if "speed" in data:
+                        system_state.ticker_speed = int(data["speed"])
+                elif path == "/api/studio":
+                    if "effect" in data:
+                        system_state.studio_effect = str(data["effect"])
+                    if "color" in data:
+                        system_state.studio_color = str(data["color"])
+                    if "speed" in data:
+                        system_state.studio_speed = int(data["speed"])
+
+                resp = b'{"ok": true}'
+                hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(resp)}\r\n\r\n".encode("utf-8")
+                writer.write(hdr + resp)
+            except Exception as e:
+                resp = b'{"ok": false}'
+                hdr = f"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(resp)}\r\n\r\n".encode("utf-8")
+                writer.write(hdr + resp)
+        elif path == "/events" or path == "/api/events":
             await _stream_sse(writer)
             return
         elif path == "/api/state":
-            body = json.dumps(system_state.get_summary()).encode("utf-8")
-            hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(body)}\r\n\r\n".encode("utf-8")
-            writer.write(hdr + body)
+            body_json = json.dumps(system_state.get_summary()).encode("utf-8")
+            hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(body_json)}\r\n\r\n".encode("utf-8")
+            writer.write(hdr + body_json)
         elif path == "/api/scan":
             results = system_state.wifi_manager.scan() if system_state.wifi_manager else []
-            body = json.dumps(results).encode("utf-8")
-            hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(body)}\r\n\r\n".encode("utf-8")
-            writer.write(hdr + body)
+            body_json = json.dumps(results).encode("utf-8")
+            hdr = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {len(body_json)}\r\n\r\n".encode("utf-8")
+            writer.write(hdr + body_json)
         elif path == "/" or path == "/index.html":
-            writer.write(HTML_HDR + HTML_BYTES)
+            writer.write(HTML_HDR)
+            await writer.drain()
+            CHUNK_SIZE = 1460
+            for i in range(0, len(HTML_BYTES), CHUNK_SIZE):
+                writer.write(HTML_BYTES[i:i + CHUNK_SIZE])
+                await writer.drain()
         else:
             msg = b"Not Found"
             hdr = f"HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: {len(msg)}\r\n\r\n".encode("utf-8")

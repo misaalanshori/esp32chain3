@@ -27,6 +27,9 @@
 7. `GameOfLife`: Conway's cellular automata with toroidal wrap and cell aging.
 8. `FireSim`: Rising ember flame diffusion with multiple color palettes.
 9. `ReflexGame`: Reaction time tester measuring milliseconds to sudden green flash.
+10. `WebPaint`: Interactive browser pixel canvas and animation player.
+11. `WebTicker`: Live text marquee scroller with 3×5 font controlled via browser.
+12. `WebStudio`: Mood lamp and ambient lighting studio with live browser presets.
 
 ## Architecture
 
