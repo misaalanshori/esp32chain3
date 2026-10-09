@@ -438,7 +438,63 @@ async def app_studio(ctx):
         step += 1
         await ctx.sleep_ms(max(20, ctx.state.studio_speed))
 
-# Catalog of All 12 Apps
+# App 13: MPU_FFT (3-Axis FFT & Energy Waterfall)
+async def app_fft(ctx):
+    import array
+    from fft import FastFFT32
+
+    imu = ctx.get_imu()
+    if not imu:
+        return
+
+    fft_engine = FastFFT32()
+    x_samps = array.array('i', [0] * 32)
+    y_samps = array.array('i', [0] * 32)
+    z_samps = array.array('i', [0] * 32)
+    history = [0, 0, 0, 0, 0, 0]
+    BAR_COLORS = (0xF800, 0xFD20, 0xFFE0, 0x07EA, 0x07E0)
+
+    while not ctx.should_stop():
+        act = ctx.poll_action(ctx.app_manager.button)
+        if act == "exit":
+            break
+        if act == "tap":
+            history = [0, 0, 0, 0, 0, 0]
+
+        for s in range(32):
+            if ctx.should_stop():
+                return
+            try:
+                acc = imu.read_accel_data()
+                x_samps[s] = int(acc["x"] * 100)
+                y_samps[s] = int(acc["y"] * 100)
+                z_samps[s] = int(acc["z"] * 100)
+            except Exception:
+                pass
+            await ctx.sleep_ms(8)
+
+        mag_x, mag_y, mag_z, total_e = fft_engine.process_3axis(x_samps, y_samps, z_samps)
+        ctx.state.set_fft_data(total_e, mag_x, mag_y, mag_z)
+
+        if total_e < 1200: h = 0
+        elif total_e < 3500: h = 1
+        elif total_e < 8000: h = 2
+        elif total_e < 16000: h = 3
+        elif total_e < 30000: h = 4
+        else: h = 5
+
+        for c in range(5):
+            history[c] = history[c + 1]
+        history[5] = h
+
+        ctx.matrix.fill(0)
+        for col in range(6):
+            height = history[col]
+            for row in range(height):
+                ctx.matrix.pixel(col, 4 - row, BAR_COLORS[4 - row])
+        ctx.matrix.show()
+
+# Catalog of All 13 Apps
 REGISTERED_APPS = (
     ("Rainbow", app_rainbow),
     ("JedagJedug", app_jedagjedug),
@@ -452,4 +508,5 @@ REGISTERED_APPS = (
     ("WebPaint", app_paint),
     ("WebTicker", app_ticker),
     ("WebStudio", app_studio),
+    ("MPU_FFT", app_fft),
 )

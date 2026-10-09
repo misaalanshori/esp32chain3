@@ -22,6 +22,8 @@ class StateService:
         self.wifi_manager = None
         self.matrix_service = None
         self.screen_bytes = bytearray(90)
+        self.fft_bytes = bytearray(50)
+        self.fft_seq = 0
         self.sensor_data = {
             "x": 0.0, "y": 0.0, "z": 0.0, "temp": 0.0, "active": False
         }
@@ -48,6 +50,20 @@ class StateService:
         if temp is not None:
             self.sensor_data["temp"] = round(float(temp), 1)
         self.sensor_data["active"] = True
+
+    def set_fft_data(self, energy, mag_x, mag_y, mag_z):
+        self.fft_seq = (self.fft_seq + 1) & 0xFF
+        b = self.fft_bytes
+        b[0] = self.fft_seq
+        # Energy normalized 0..255
+        b[1] = min(255, energy // 120)
+        for i in range(16):
+            b[2 + i] = min(255, mag_x[i] // 30)
+            b[18 + i] = min(255, mag_y[i] // 30)
+            b[34 + i] = min(255, mag_z[i] // 30)
+
+    def get_fft_raw(self):
+        return self.fft_bytes
 
     def get_screen_raw(self):
         if not self.matrix_service:

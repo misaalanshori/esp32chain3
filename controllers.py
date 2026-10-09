@@ -105,3 +105,35 @@ class StreamController(BaseController):
         except Exception:
             pass
         return None, None, None # Stream closed
+
+    @route("/events/fft", "GET")
+    async def sse_fft_stream(self, request):
+        state = self.ioc.resolve("state")
+        writer = request.writer
+        headers = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/event-stream\r\n"
+            "Cache-Control: no-cache\r\n"
+            "Connection: keep-alive\r\n"
+            "Access-Control-Allow-Origin: *\r\n\r\n"
+        )
+        writer.write(headers.encode("utf-8"))
+        await writer.drain()
+
+        last_seq = -1
+        last_heartbeat = time.ticks_ms()
+        try:
+            while True:
+                curr = state.get_fft_raw()
+                seq = curr[0]
+                now = time.ticks_ms()
+                if seq != last_seq or time.ticks_diff(now, last_heartbeat) > 3000:
+                    b64 = ubinascii.b2a_base64(curr)
+                    writer.write(b"data: " + b64 + b"\n")
+                    await writer.drain()
+                    last_seq = seq
+                    last_heartbeat = now
+                await asyncio.sleep_ms(40)
+        except Exception:
+            pass
+        return None, None, None

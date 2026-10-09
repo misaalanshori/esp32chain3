@@ -30,11 +30,13 @@
 10. `WebPaint`: Interactive browser pixel canvas and animation player.
 11. `WebTicker`: Live text marquee scroller with 3×5 font controlled via browser.
 12. `WebStudio`: Mood lamp and ambient lighting studio with live browser presets.
+13. `MPU_FFT`: 3-axis MPU6050 accelerometer FFT with DC offset removal and live scrolling energy waterfall.
 
 ## Framework Architecture
 
 Built on an embedded, decoupled **MVC + IoC/DI + AOP** framework on top of a unified cooperative `uasyncio` event loop:
 
+- **`fft.py` (Viper-Accelerated FFT Engine)**: In-place 32-point Radix-2 Cooley-Tukey DIT FFT, DC-offset subtraction, Hanning windowing, and $\alpha$-max $\beta$-min integer magnitude estimation compiled via `@micropython.viper` (< 1.4 ms for all 3 axes).
 - **`container.py` (Inversion of Control & Dependency Injection)**: Central `Container` resolving singletons and factories (`state`, `matrix`, `imu`, `wifi`, `app_manager`, `webserver`).
 - **`dto.py` (Data Transfer Objects)**: Strictly-validated request/response DTOs (`LaunchRequestDto`, `PaintRequestDto`, `TickerRequestDto`, `StudioRequestDto`, `ApiResponseDto`).
 - **`aop.py` (Aspect-Oriented Programming)**:
@@ -44,7 +46,7 @@ Built on an embedded, decoupled **MVC + IoC/DI + AOP** framework on top of a uni
   - `@timed`: Execution duration and telemetry aspect.
 - **`controllers.py` (MVC Controllers)**: `SystemController`, `AppController`, `StreamController`.
 - **`services.py` (Domain Services)**: `StateService`, `MatrixService`, `IMUService`, and `AppManager` (managing cooperative task preemption).
-- **`apps.py` (Cooperative Micro-Apps)**: All 12 apps run as non-blocking async tasks with cooperative preemption, yielding to the event loop on every frame.
+- **`apps.py` (Cooperative Micro-Apps)**: All 13 apps run as non-blocking async tasks with cooperative preemption, yielding to the event loop on every frame.
 - **`menu.py` (Async Menu Engine)**: Non-blocking physical button polling and 3×5 / 2-digit number renderer.
 - **`webserver.py`**: Async HTTP server routing requests through controller actions and streaming views in 1460-byte chunks.
 - **`main.py`**: Framework bootstrap and unified single-loop `asyncio.gather()` runner (zero `_thread` stack overhead).
@@ -70,6 +72,7 @@ Runs as a background async task on port 80 at boot.
 
 - `GET /`: Responsive dark-mode dashboard with live status updates and real-time screen mirror.
 - `GET /events`: **Server-Sent Events (SSE)** binary stream (90 raw RGB bytes base64-encoded to 120 chars, zero heap allocation, `~16 FPS` on screen updates, idle heartbeat every 5s).
+- `GET /events/fft`: **Server-Sent Events (SSE)** binary 3-axis FFT stream (50 raw bytes base64-encoded to 68 chars: sequence, energy, 16 bins X, 16 bins Y, 16 bins Z).
 - `GET /api/state`: Full system state JSON endpoint (RAM, WiFi, App, Sensors, Screen).
 - `GET /api/scan`: Trigger WiFi scan and return visible networks.
 - `POST /api/launch`: Remotely switch running apps or return to menu (`{"app": 1..12}` or `{"app": "menu"}`).

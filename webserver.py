@@ -179,12 +179,26 @@ button:hover{background:#30363d}
     <span>Registered Applications</span>
     <div style="display:flex;gap:6px;align-items:center">
       <button onclick="launchApp('menu')" style="padding:3px 8px;font-size:0.7rem">Return to Menu</button>
-      <span id="appSummary" style="font-size:0.75rem;color:var(--sub)">12 Apps</span>
+      <span id="appSummary" style="font-size:0.75rem;color:var(--sub)">13 Apps</span>
     </div>
   </h2>
   <div class="app-list" id="appList">
     <div style="color:var(--sub);font-size:0.85rem">Loading apps...</div>
   </div>
+</div>
+
+<div class="card" style="margin-top:14px">
+  <h2>
+    <span>MPU6050 3-Axis FFT & Spectrogram</span>
+    <span class="sse-tag"><div class="sse-dot"></div> SSE Stream (50B)</span>
+  </h2>
+  <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:0.8rem;color:var(--sub)">Motion Energy: <strong id="fftEnergyVal" style="color:var(--text)">0</strong></div>
+    <button onclick="launchApp(13)" style="padding:2px 8px;font-size:0.7rem">Launch MPU_FFT (13)</button>
+  </div>
+  <div class="bar-wrap" style="height:10px;margin-bottom:10px"><div id="fftEnergyBar" class="bar" style="background:var(--green)"></div></div>
+  <div style="font-size:0.75rem;color:var(--sub);margin-bottom:4px">X-Axis (Red) &bull; Y-Axis (Green) &bull; Z-Axis (Blue) [0 &ndash; 50 Hz]:</div>
+  <canvas id="fftCanvas" width="280" height="75" style="width:100%;max-width:420px;background:#090d13;border:1px solid var(--border);border-radius:6px"></canvas>
 </div>
 
 <div class="card" style="margin-top:14px">
@@ -237,6 +251,49 @@ function startSSE(){
   }catch(e){}
 }
 startSSE();
+
+let fftSource = null;
+const fftCanvas = document.getElementById('fftCanvas');
+const fftCtx = fftCanvas ? fftCanvas.getContext('2d') : null;
+
+function startFftSSE(){
+  try{
+    if(fftSource) fftSource.close();
+    fftSource = new EventSource('/events/fft');
+    fftSource.onmessage = function(e){
+      try{
+        const b = atob(e.data.trim());
+        if(b.length < 50) return;
+        const energy = b.charCodeAt(1);
+        document.getElementById('fftEnergyVal').innerText = energy;
+        const eBar = document.getElementById('fftEnergyBar');
+        const pct = Math.min(100, Math.round((energy / 255) * 100));
+        eBar.style.width = pct + '%';
+        eBar.style.backgroundColor = (pct > 65) ? 'var(--red)' : ((pct > 30) ? 'var(--amber)' : 'var(--green)');
+
+        if(fftCtx){
+          const w = fftCanvas.width, h = fftCanvas.height;
+          fftCtx.fillStyle = '#090d13';
+          fftCtx.fillRect(0, 0, w, h);
+          const binW = w / 16;
+          for(let i=0; i<16; i++){
+            const mx = Math.min(h - 2, (b.charCodeAt(2 + i) / 255) * (h - 2));
+            const my = Math.min(h - 2, (b.charCodeAt(18 + i) / 255) * (h - 2));
+            const mz = Math.min(h - 2, (b.charCodeAt(34 + i) / 255) * (h - 2));
+            const colW = Math.max(1, (binW - 2) / 3);
+            fftCtx.fillStyle = 'rgba(248,81,73,0.8)';
+            fftCtx.fillRect(i * binW + 1, h - mx, colW, mx);
+            fftCtx.fillStyle = 'rgba(63,185,80,0.8)';
+            fftCtx.fillRect(i * binW + 1 + colW, h - my, colW, my);
+            fftCtx.fillStyle = 'rgba(88,166,255,0.8)';
+            fftCtx.fillRect(i * binW + 1 + 2 * colW, h - mz, colW, mz);
+          }
+        }
+      }catch(err){}
+    };
+  }catch(e){}
+}
+startFftSSE();
 
 let paintColor = '#00ffff';
 const paintBuf = Array(30).fill('#000000');
