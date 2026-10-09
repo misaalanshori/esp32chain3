@@ -1,6 +1,7 @@
 # menu.py - Lightweight menu system for 6x5 NeoMatrix
 import time
 import machine
+from state import system_state
 
 # 3x5 font bitmaps for digits 0-9 (5 rows x 3 bits wide)
 DIGITS = (
@@ -68,6 +69,7 @@ class Menu:
             return
         app = self.apps[self.current]
         num = self.current + 1
+        system_state.set_menu_index(num)
         self.draw_digit(num, app["color"], x_off=1)
         # Hold progress bar on column 5 (bottom to top)
         for i in range(dots):
@@ -113,6 +115,7 @@ class Menu:
 
                     # Launch app
                     app = self.apps[self.current]
+                    system_state.set_active_app(app["name"])
                     try:
                         app["handler"](self.matrix, self.btn)
                     except TypeError:
@@ -124,6 +127,7 @@ class Menu:
                         print("App exception:", e)
 
                     # Return to menu
+                    system_state.set_active_app("Menu")
                     self.draw_menu()
                 else:
                     # Short press: cycle to next app

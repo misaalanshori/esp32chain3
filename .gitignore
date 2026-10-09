@@ -1,0 +1,7 @@
+secrets.py
+secrets.json
+wifi_secrets.py
+*.secret
+*.secrets
+__pycache__/
+*.pyc

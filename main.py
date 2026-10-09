@@ -2,8 +2,14 @@
 import machine
 import neopixel
 import time
+import _thread
+import asyncio
+
 from neomatrix import NeoMatrix
 from menu import Menu, check_exit
+from wifi_manager import WiFiManager
+from webserver import run_server
+from state import system_state
 
 matrixWidth = const(6)
 matrixHeight = const(5)
@@ -91,6 +97,10 @@ def app_bubble(matrix, btn):
             acc = mpu.read_accel_data()
             ax = acc["x"]
             ay = acc["y"]
+            az = acc["z"]
+            temp = mpu.read_temperature()
+            system_state.set_sensor(ax, ay, az, temp)
+
             bx = min(5, max(0, int(round(2.5 + (ax / 9.8) * 2.5))))
             by = min(4, max(0, int(round(2.0 + (ay / 9.8) * 2.0))))
 
@@ -113,12 +123,30 @@ def app_bubble(matrix, btn):
             pass
         time.sleep_ms(40)
 
+# --- Background Network Tasks ---
+async def _network_tasks():
+    wm = WiFiManager()
+    asyncio.create_task(wm.run_loop())
+    await run_server(port=80)
+
+def _bg_thread_entry():
+    asyncio.run(_network_tasks())
+
+def start_background_services():
+    _thread.stack_size(14336)
+    _thread.start_new_thread(_bg_thread_entry, ())
+
 def main():
+    # 1. Start WiFi Manager & Async Web Server in background thread
+    start_background_services()
+
+    # 2. Setup NeoPixel Matrix
     neo_pin = machine.Pin(7, machine.Pin.OUT)
     neo_pixel = neopixel.NeoPixel(neo_pin, matrixWidth * matrixHeight)
     neo_matrix = NeoMatrix(matrixWidth, matrixHeight, neo_pixel)
     neo_matrix.set_brightness(0.3)
 
+    # 3. Setup and start Menu
     menu = Menu(neo_matrix, btn_pin=9, hold_ms=600)
     menu.register("Rainbow", app_rainbow)
     menu.register("JedagJedug", app_jedagjedug)

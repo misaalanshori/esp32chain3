@@ -21,3 +21,27 @@
 1. `Rainbow`: Animated RGB wave on matrix.
 2. `JedagJedug`: Color wheel cycle across the strip.
 3. `BubbleLevel`: Interactive tilt level using MPU6050.
+
+## Multi WiFi Manager (`wifi_manager.py`)
+
+- **Auto-connect & Switch**: Priority-based connecting across configured SSIDs in `secrets.py`.
+- **Auto-reconnect**: Detects dropped connections and restores STA link.
+- **Auto-AP fallback**: Starts `ESP32-Chain3` AP (`192.168.4.1`) if no known networks are reachable, and periodically scans to resume STA mode.
+
+### Setup Credentials (`secrets.py`)
+Copy `secrets.py.example` to `secrets.py` (which is in `.gitignore`):
+```python
+WIFI_NETWORKS = [
+    ("MainSSID", "MainPassword"),
+    ("SecondarySSID", "SecondaryPassword"),
+]
+```
+
+## Async Web Server (`webserver.py`)
+
+Runs as a background async task on port 80 at boot.
+
+- `GET /`: Responsive dark-mode dashboard with live status updates (RAM, WiFi, App, MPU6050 sensors, Scanned networks).
+- `GET /api/state`: Full system state JSON endpoint.
+- `GET /api/scan`: Trigger WiFi scan and return visible networks.
+
