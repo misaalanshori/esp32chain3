@@ -1,9 +1,9 @@
-from neomatrix import NeoMatrix
-import neopixel
+# main.py - App launcher and registered apps
 import machine
+import neopixel
 import time
-import gc
-import framebuf
+from neomatrix import NeoMatrix
+from menu import Menu, check_exit
 
 matrixWidth = const(6)
 matrixHeight = const(5)
@@ -32,39 +32,99 @@ def hsv_to_rgb(h, s, v):
 
     return int(r * 255), int(g * 255), int(b * 255)
 
-
-
 def rgb_to_rgb565(r, g, b):
-    # Convert 8-bit RGB to 5-bit (R), 6-bit (G), and 5-bit (B)
-    r5 = (r >> 3) & 0x1F  # 8-bit to 5-bit
-    g6 = (g >> 2) & 0x3F  # 8-bit to 6-bit
-    b5 = (b >> 3) & 0x1F  # 8-bit to 5-bit
-
-    # Combine into a single 16-bit integer
+    r5 = (r >> 3) & 0x1F
+    g6 = (g >> 2) & 0x3F
+    b5 = (b >> 3) & 0x1F
     return (r5 << 11) | (g6 << 5) | b5
-        
-def fill_rainbow(framebuffer, width, height):
-    total = width + height - 1
-    for x in range(width):
-        for y in range(height):
-            step = x + y
-            h = (step / total) * 360
-            r, g, b = hsv_to_rgb(h, 0.2, 0.5)
-            color = rgb_to_rgb565(r, g, b)
-            framebuffer.pixel(x, y, color)        
 
-def main(iterations=60):
+# --- App 1: Animated Rainbow ---
+def app_rainbow(matrix, btn):
+    offset = 0
+    while not check_exit(btn):
+        for x in range(matrixWidth):
+            for y in range(matrixHeight):
+                h = ((x + y) * 36 + offset) % 360
+                r, g, b = hsv_to_rgb(h, 0.9, 0.4)
+                matrix.pixel(x, y, rgb_to_rgb565(r, g, b))
+        matrix.show()
+        offset = (offset + 12) % 360
+        time.sleep_ms(25)
+
+# --- App 2: Jedag-Jedug (Color Wheel) ---
+def wheel(pos):
+    if pos < 85:
+        return (pos * 3, 255 - pos * 3, 0)
+    elif pos < 170:
+        pos -= 85
+        return (255 - pos * 3, 0, pos * 3)
+    else:
+        pos -= 170
+        return (0, pos * 3, 255 - pos * 3)
+
+def app_jedagjedug(matrix, btn):
+    np = matrix.neopixel
+    num_pixels = len(np)
+    j = 0
+    while not check_exit(btn):
+        for i in range(num_pixels):
+            np[i] = wheel((i * 8 + j) & 255)
+        np.write()
+        j = (j + 4) & 255
+        time.sleep_ms(20)
+
+# --- App 3: MPU6050 Bubble Level ---
+def app_bubble(matrix, btn):
+    try:
+        from MPU6050 import MPU6050
+        mpu_pwr = machine.Pin(2, machine.Pin.OUT)
+        mpu_pwr.value(1)
+        time.sleep_ms(50)
+        i2c = machine.SoftI2C(scl=machine.Pin(4), sda=machine.Pin(3))
+        mpu = MPU6050(i2c=i2c)
+    except Exception as e:
+        print("IMU init failed:", e)
+        return
+
+    while not check_exit(btn):
+        try:
+            acc = mpu.read_accel_data()
+            ax = acc["x"]
+            ay = acc["y"]
+            bx = min(5, max(0, int(round(2.5 + (ax / 9.8) * 2.5))))
+            by = min(4, max(0, int(round(2.0 + (ay / 9.8) * 2.0))))
+
+            matrix.fill(0)
+            # Center target guides
+            matrix.pixel(2, 2, 0x18C3)
+            matrix.pixel(3, 2, 0x18C3)
+
+            # Bubble color based on deviation
+            if (bx in (2, 3)) and by == 2:
+                color = 0x07E0  # Green: level
+            elif (bx in (1, 4)) or (by in (1, 3)):
+                color = 0xFFE0  # Yellow: slight tilt
+            else:
+                color = 0xF800  # Red: steep tilt
+
+            matrix.pixel(bx, by, color)
+            matrix.show()
+        except Exception:
+            pass
+        time.sleep_ms(40)
+
+def main():
     neo_pin = machine.Pin(7, machine.Pin.OUT)
-    neo_pixel = neopixel.NeoPixel(neo_pin, matrixWidth*matrixHeight)
-    neo_matrix = NeoMatrix(matrixWidth, matrixHeight,neo_pixel)
-    neo_matrix.set_brightness(1)
-    
-    rainbowbg = framebuf.FrameBuffer(bytearray(matrixWidth*matrixHeight*2), matrixWidth, matrixHeight, framebuf.RGB565)
-    fill_rainbow(rainbowbg, matrixWidth, matrixHeight)
-    gc.disable()
-    while True:
-        neo_matrix.blit(rainbowbg, 0, 0)
-        neo_matrix.show()
+    neo_pixel = neopixel.NeoPixel(neo_pin, matrixWidth * matrixHeight)
+    neo_matrix = NeoMatrix(matrixWidth, matrixHeight, neo_pixel)
+    neo_matrix.set_brightness(0.3)
+
+    menu = Menu(neo_matrix, btn_pin=9, hold_ms=600)
+    menu.register("Rainbow", app_rainbow)
+    menu.register("JedagJedug", app_jedagjedug)
+    menu.register("BubbleLevel", app_bubble)
+
+    menu.run()
 
 if __name__ == "__main__":
     main()
