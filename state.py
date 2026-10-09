@@ -17,6 +17,7 @@ class SystemState:
         self.boot_time = time.ticks_ms()
         self.active_app = "Menu"
         self.menu_index = 1
+        self.registered_apps = []
         self.wifi_manager = None
         self.matrix = None
         self.screen_bytes = bytearray(90)
@@ -30,6 +31,9 @@ class SystemState:
 
     def set_active_app(self, name):
         self.active_app = name
+
+    def set_registered_apps(self, apps_list):
+        self.registered_apps = [{"id": i + 1, "name": name} for i, (name, _) in enumerate(apps_list)]
 
     def set_menu_index(self, idx):
         self.menu_index = idx
@@ -110,6 +114,7 @@ class SystemState:
             "app": {
                 "active": self.active_app,
                 "menu_index": self.menu_index,
+                "list": self.registered_apps,
             },
             "sensors": self.sensor_data,
             "screen": self.get_screen_pixels(),

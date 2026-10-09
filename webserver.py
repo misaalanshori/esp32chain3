@@ -44,6 +44,13 @@ button:hover{background:#30363d}
 .led{width:32px;height:32px;border-radius:50%;background:#10151c;border:1px solid #1c2430;transition:background-color 0.08s ease,box-shadow 0.08s ease}
 .sse-tag{font-size:0.7rem;color:var(--green);display:flex;align-items:center;gap:5px}
 .sse-dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+
+/* App List Styles */
+.app-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:10px}
+.app-item{background:#0e131a;border:1px solid var(--border);border-radius:6px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:0.85rem;transition:all 0.2s}
+.app-item.active{border-color:var(--green);background:rgba(63,185,80,0.12);box-shadow:0 0 10px rgba(63,185,80,0.2)}
+.app-item.selected{border-color:var(--blue);background:rgba(88,166,255,0.12);box-shadow:0 0 8px rgba(88,166,255,0.2)}
+.app-id{background:#21262d;color:var(--text);padding:2px 7px;border-radius:4px;font-weight:bold;font-size:0.75rem;margin-right:8px}
 </style>
 </head>
 <body>
@@ -94,6 +101,16 @@ button:hover{background:#30363d}
     <div class="stat"><span>Accel Y (m/s&sup2;)</span><span id="imuY" class="val">-</span></div>
     <div class="stat"><span>Accel Z (m/s&sup2;)</span><span id="imuZ" class="val">-</span></div>
     <div class="stat"><span>Temperature</span><span id="imuTemp" class="val">-</span></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:14px">
+  <h2>
+    <span>📱 Registered Applications</span>
+    <span id="appSummary" style="font-size:0.75rem;color:var(--sub)">9 Apps</span>
+  </h2>
+  <div class="app-list" id="appList">
+    <div style="color:var(--sub);font-size:0.85rem">Loading apps...</div>
   </div>
 </div>
 
@@ -196,6 +213,7 @@ async function updateState(){
     const a=d.app||{};
     document.getElementById('appActive').innerText=a.active||'Menu';
     document.getElementById('appIdx').innerText='App '+ (a.menu_index||1);
+    if(a.list&&a.list.length>0){renderAppList(a.list,a.active,a.menu_index);}
 
     const imu=d.sensors||{};
     document.getElementById('imuStatus').innerText=imu.active?'Active':'Idle / Uninitialized';
@@ -213,6 +231,30 @@ async function updateState(){
 function renderScanTable(list){
   const tb=document.getElementById('scanTable');
   tb.innerHTML=list.slice(0,8).map(n=>`<tr><td><strong>${n.ssid}</strong></td><td>${n.rssi} dBm</td><td>${n.secure?'WPA/WPA2':'Open'}</td></tr>`).join('');
+}
+function renderAppList(apps,activeApp,menuIdx){
+  const el=document.getElementById('appList');
+  if(!apps||!apps.length)return;
+  el.innerHTML=apps.map(a=>{
+    const isRunning=(activeApp===a.name);
+    const isSelected=(activeApp==='Menu'&&menuIdx===a.id);
+    let cls='app-item';
+    let badge='<span style="color:var(--sub);font-size:0.7rem">Ready</span>';
+    if(isRunning){
+      cls+=' active';
+      badge='<span class="badge badge-sta" style="font-size:0.65rem">Running</span>';
+    }else if(isSelected){
+      cls+=' selected';
+      badge='<span class="badge" style="background:rgba(88,166,255,0.15);color:var(--blue);border:1px solid var(--blue);font-size:0.65rem">Selected</span>';
+    }
+    return `<div class="${cls}">
+      <div style="display:flex;align-items:center">
+        <span class="app-id">${a.id}</span>
+        <strong>${a.name}</strong>
+      </div>
+      ${badge}
+    </div>`;
+  }).join('');
 }
 async function triggerScan(){
   try{

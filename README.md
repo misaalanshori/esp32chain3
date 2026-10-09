@@ -19,8 +19,14 @@
 
 ### Registered Apps (`apps.py`):
 1. `Rainbow`: Animated RGB wave on matrix.
-2. `JedagJedug`: Color wheel cycle across the strip.
+2. `JedagJedug`: Fast color wheel cycle across the matrix.
 3. `BubbleLevel`: Interactive tilt level using MPU6050.
+4. `ShakeDice`: Physical board shake (or tap) to roll 1–6 with tumble animation.
+5. `TiltPong`: Single-player arcade paddle game steered by IMU tilt.
+6. `Hourglass`: Physics falling sand particles reacting to gravity orientation.
+7. `GameOfLife`: Conway's cellular automata with toroidal wrap and cell aging.
+8. `FireSim`: Rising ember flame diffusion with multiple color palettes.
+9. `ReflexGame`: Reaction time tester measuring milliseconds to sudden green flash.
 
 ## Architecture
 

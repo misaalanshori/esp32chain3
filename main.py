@@ -32,6 +32,7 @@ def main():
     system_state.matrix = matrix
 
     # 3. Setup Menu and register applications
+    system_state.set_registered_apps(REGISTERED_APPS)
     menu = Menu(matrix, btn_pin=9, hold_ms=600)
     for name, handler in REGISTERED_APPS:
         menu.register(name, handler)
