@@ -45,8 +45,16 @@ Built on an embedded, decoupled **MVC + IoC/DI + AOP** framework on top of a uni
   - `@handle_errors`: Exception boundary aspect generating uniform error DTOs.
   - `@timed`: Execution duration and telemetry aspect.
 - **`controllers.py` (MVC Controllers)**: `SystemController`, `AppController`, `StreamController`.
-- **`services.py` (Domain Services)**: `StateService`, `MatrixService`, `IMUService`, and `AppManager` (managing cooperative task preemption).
-- **`apps.py` (Cooperative Micro-Apps)**: All 13 apps run as non-blocking async tasks with cooperative preemption, yielding to the event loop on every frame.
+- **`services/` (Individual Domain Services)**:
+  - `state_service.py`: Shared state, telemetry, and binary buffer management.
+  - `matrix_service.py`: Hardware NeoMatrix encapsulation.
+  - `imu_service.py`: Hardware MPU6050 400kHz I2C encapsulation.
+  - `context.py`: Cooperative execution context (`AppContext`) injected into apps.
+  - `app_manager.py`: Task preemption, lifecycle supervisor, and button registry.
+- **`apps/` (Individual Application Modules)**:
+  - `rainbow.py`, `jedagjedug.py`, `bubble.py`, `dice.py`, `pong.py`, `hourglass.py`, `life.py`, `fire.py`, `reflex.py`, `paint.py`, `ticker.py`, `studio.py`, `mpu_fft.py`.
+  - `utils.py`: Shared color math and 3×5 font glyphs.
+  - `__init__.py`: Declarative `REGISTERED_APPS` registry.
 - **`menu.py` (Async Menu Engine)**: Non-blocking physical button polling and 3×5 / 2-digit number renderer.
 - **`webserver.py`**: Async HTTP server routing requests through controller actions and streaming views in 1460-byte chunks.
 - **`main.py`**: Framework bootstrap and unified single-loop `asyncio.gather()` runner (zero `_thread` stack overhead).
