@@ -438,7 +438,7 @@ async def app_studio(ctx):
         step += 1
         await ctx.sleep_ms(max(20, ctx.state.studio_speed))
 
-# App 13: MPU_FFT (3-Axis FFT & Energy Waterfall)
+# App 13: MPU_FFT (High-Speed 3-Axis FFT & Energy Waterfall)
 async def app_fft(ctx):
     import array
     from fft import FastFFT32
@@ -448,6 +448,7 @@ async def app_fft(ctx):
         return
 
     fft_engine = FastFFT32()
+    raw_buf = bytearray(6)
     x_samps = array.array('i', [0] * 32)
     y_samps = array.array('i', [0] * 32)
     z_samps = array.array('i', [0] * 32)
@@ -461,21 +462,31 @@ async def app_fft(ctx):
         if act == "tap":
             history = [0, 0, 0, 0, 0, 0]
 
+        # Fast 3ms sampling (~300 Hz sample rate, < 5ms interval)
         for s in range(32):
             if ctx.should_stop():
                 return
             try:
-                acc = imu.read_accel_data()
-                x_samps[s] = int(acc["x"] * 100)
-                y_samps[s] = int(acc["y"] * 100)
-                z_samps[s] = int(acc["z"] * 100)
+                ctx.imu_service.read_raw_accel_into(raw_buf)
+                x = (raw_buf[0] << 8) | raw_buf[1]
+                if x >= 32768: x -= 65536
+                y = (raw_buf[2] << 8) | raw_buf[3]
+                if y >= 32768: y -= 65536
+                z = (raw_buf[4] << 8) | raw_buf[5]
+                if z >= 32768: z -= 65536
+
+                x_samps[s] = x
+                y_samps[s] = y
+                z_samps[s] = z
             except Exception:
                 pass
-            await ctx.sleep_ms(8)
+            await ctx.sleep_ms(3)
 
+        # 3-Axis FFT with DC offset removal and Hanning window
         mag_x, mag_y, mag_z, total_e = fft_engine.process_3axis(x_samps, y_samps, z_samps)
         ctx.state.set_fft_data(total_e, mag_x, mag_y, mag_z)
 
+        # Dynamic movement energy mapped to bar height 0..5
         if total_e < 1200: h = 0
         elif total_e < 3500: h = 1
         elif total_e < 8000: h = 2

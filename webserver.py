@@ -189,16 +189,40 @@ button:hover{background:#30363d}
 
 <div class="card" style="margin-top:14px">
   <h2>
-    <span>MPU6050 3-Axis FFT & Spectrogram</span>
-    <span class="sse-tag"><div class="sse-dot"></div> SSE Stream (50B)</span>
+    <span>MPU6050 3-Axis Spectrogram Heatmap</span>
+    <span class="sse-tag"><div class="sse-dot"></div> 300 Hz (&lt;5ms) SSE Stream</span>
   </h2>
-  <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
-    <div style="font-size:0.8rem;color:var(--sub)">Motion Energy: <strong id="fftEnergyVal" style="color:var(--text)">0</strong></div>
-    <button onclick="launchApp(13)" style="padding:2px 8px;font-size:0.7rem">Launch MPU_FFT (13)</button>
+  <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:0.8rem;color:var(--sub)">Axis:</span>
+      <button class="eff-btn active" id="ax-xyz" onclick="setSpectroAxis('xyz', this)" style="padding:2px 8px;font-size:0.75rem">XYZ</button>
+      <button class="eff-btn" id="ax-x" onclick="setSpectroAxis('x', this)" style="padding:2px 8px;font-size:0.75rem">X</button>
+      <button class="eff-btn" id="ax-y" onclick="setSpectroAxis('y', this)" style="padding:2px 8px;font-size:0.75rem">Y</button>
+      <button class="eff-btn" id="ax-z" onclick="setSpectroAxis('z', this)" style="padding:2px 8px;font-size:0.75rem">Z</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div style="font-size:0.8rem;color:var(--sub)">Energy: <strong id="fftEnergyVal" style="color:var(--text)">0</strong></div>
+      <button onclick="launchApp(13)" style="padding:2px 8px;font-size:0.7rem">Launch MPU_FFT (13)</button>
+    </div>
   </div>
-  <div class="bar-wrap" style="height:10px;margin-bottom:10px"><div id="fftEnergyBar" class="bar" style="background:var(--green)"></div></div>
-  <div style="font-size:0.75rem;color:var(--sub);margin-bottom:4px">X-Axis (Red) &bull; Y-Axis (Green) &bull; Z-Axis (Blue) [0 &ndash; 50 Hz]:</div>
-  <canvas id="fftCanvas" width="280" height="75" style="width:100%;max-width:420px;background:#090d13;border:1px solid var(--border);border-radius:6px"></canvas>
+
+  <div class="bar-wrap" style="height:8px;margin-bottom:10px"><div id="fftEnergyBar" class="bar" style="background:var(--green)"></div></div>
+
+  <div style="position:relative;background:#050810;border:1px solid var(--border);border-radius:6px;overflow:hidden">
+    <div style="position:absolute;left:4px;top:2px;font-size:0.65rem;color:var(--sub);font-family:monospace;pointer-events:none">150 Hz &uarr;</div>
+    <div style="position:absolute;left:4px;bottom:2px;font-size:0.65rem;color:var(--sub);font-family:monospace;pointer-events:none">0 Hz (DC Filtered) &darr;</div>
+    <div style="position:absolute;right:6px;top:2px;font-size:0.65rem;color:var(--sub);font-family:monospace;pointer-events:none" id="peakFreqText">Peak: - Hz</div>
+    <canvas id="spectroCanvas" width="360" height="112" style="width:100%;height:112px;display:block;image-rendering:pixelated"></canvas>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:0.7rem;color:var(--sub)">
+    <span>&larr; Earlier Time</span>
+    <span style="display:flex;align-items:center;gap:4px">
+      <span>Inferno:</span>
+      <div style="width:60px;height:8px;border-radius:2px;background:linear-gradient(to right, #000, #3c096c, #e85d04, #ffdd00, #fff)"></div>
+      <span>Peak</span>
+    </span>
+    <span>Live (Now) &rarr;</span>
+  </div>
 </div>
 
 <div class="card" style="margin-top:14px">
@@ -252,9 +276,37 @@ function startSSE(){
 }
 startSSE();
 
+let spectroAxis = 'xyz';
+function setSpectroAxis(ax, btn){
+  spectroAxis = ax;
+  document.querySelectorAll('#ax-xyz, #ax-x, #ax-y, #ax-z').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function getHeatColor(val){
+  const norm = Math.min(1, Math.max(0, val / 255));
+  if(norm < 0.25){
+    const t = norm / 0.25;
+    return `rgb(${Math.round(40 * t)}, ${Math.round(10 * t)}, ${Math.round(80 * t)})`;
+  }else if(norm < 0.5){
+    const t = (norm - 0.25) / 0.25;
+    return `rgb(${Math.round(40 + 180 * t)}, ${Math.round(10 + 40 * t)}, ${Math.round(80 - 60 * t)})`;
+  }else if(norm < 0.75){
+    const t = (norm - 0.5) / 0.25;
+    return `rgb(${Math.round(220 + 35 * t)}, ${Math.round(50 + 170 * t)}, ${Math.round(20 - 10 * t)})`;
+  }else{
+    const t = (norm - 0.75) / 0.25;
+    return `rgb(255, ${Math.round(220 + 35 * t)}, ${Math.round(10 + 245 * t)})`;
+  }
+}
+
 let fftSource = null;
-const fftCanvas = document.getElementById('fftCanvas');
-const fftCtx = fftCanvas ? fftCanvas.getContext('2d') : null;
+const spectroCanvas = document.getElementById('spectroCanvas');
+const spectroCtx = spectroCanvas ? spectroCanvas.getContext('2d') : null;
+if(spectroCtx){
+  spectroCtx.fillStyle = '#050810';
+  spectroCtx.fillRect(0, 0, spectroCanvas.width, spectroCanvas.height);
+}
 
 function startFftSSE(){
   try{
@@ -271,23 +323,30 @@ function startFftSSE(){
         eBar.style.width = pct + '%';
         eBar.style.backgroundColor = (pct > 65) ? 'var(--red)' : ((pct > 30) ? 'var(--amber)' : 'var(--green)');
 
-        if(fftCtx){
-          const w = fftCanvas.width, h = fftCanvas.height;
-          fftCtx.fillStyle = '#090d13';
-          fftCtx.fillRect(0, 0, w, h);
-          const binW = w / 16;
+        if(spectroCtx){
+          const w = spectroCanvas.width, h = spectroCanvas.height;
+          // Waterfall scroll: shift canvas left by 2px
+          spectroCtx.drawImage(spectroCanvas, -2, 0);
+
+          const binH = h / 16;
+          let peakBin = 0, peakMag = 0;
           for(let i=0; i<16; i++){
-            const mx = Math.min(h - 2, (b.charCodeAt(2 + i) / 255) * (h - 2));
-            const my = Math.min(h - 2, (b.charCodeAt(18 + i) / 255) * (h - 2));
-            const mz = Math.min(h - 2, (b.charCodeAt(34 + i) / 255) * (h - 2));
-            const colW = Math.max(1, (binW - 2) / 3);
-            fftCtx.fillStyle = 'rgba(248,81,73,0.8)';
-            fftCtx.fillRect(i * binW + 1, h - mx, colW, mx);
-            fftCtx.fillStyle = 'rgba(63,185,80,0.8)';
-            fftCtx.fillRect(i * binW + 1 + colW, h - my, colW, my);
-            fftCtx.fillStyle = 'rgba(88,166,255,0.8)';
-            fftCtx.fillRect(i * binW + 1 + 2 * colW, h - mz, colW, mz);
+            const mx = b.charCodeAt(2 + i);
+            const my = b.charCodeAt(18 + i);
+            const mz = b.charCodeAt(34 + i);
+            let val = 0;
+            if(spectroAxis === 'xyz') val = Math.max(mx, my, mz);
+            else if(spectroAxis === 'x') val = mx;
+            else if(spectroAxis === 'y') val = my;
+            else if(spectroAxis === 'z') val = mz;
+
+            if(i > 0 && val > peakMag){ peakMag = val; peakBin = i; }
+
+            spectroCtx.fillStyle = getHeatColor(val);
+            spectroCtx.fillRect(w - 2, h - Math.round((i + 1) * binH), 2, Math.ceil(binH) + 1);
           }
+          const peakHz = Math.round(peakBin * 9.38);
+          document.getElementById('peakFreqText').innerText = `Peak: ${peakHz} Hz (${peakMag})`;
         }
       }catch(err){}
     };

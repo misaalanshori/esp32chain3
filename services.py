@@ -55,7 +55,6 @@ class StateService:
         self.fft_seq = (self.fft_seq + 1) & 0xFF
         b = self.fft_bytes
         b[0] = self.fft_seq
-        # Energy normalized 0..255
         b[1] = min(255, energy // 120)
         for i in range(16):
             b[2 + i] = min(255, mag_x[i] // 30)
@@ -134,6 +133,7 @@ class IMUService:
         self.scl_pin = scl_pin
         self.sda_pin = sda_pin
         self._imu = None
+        self._i2c = None
 
     def get_imu(self):
         if self._imu is None:
@@ -142,15 +142,21 @@ class IMUService:
                 pwr = machine.Pin(self.pwr_pin, machine.Pin.OUT)
                 pwr.value(1)
                 time.sleep_ms(30)
-                i2c = machine.SoftI2C(scl=machine.Pin(self.scl_pin), sda=machine.Pin(self.sda_pin))
-                self._imu = MPU6050(i2c=i2c)
+                self._i2c = machine.SoftI2C(scl=machine.Pin(self.scl_pin), sda=machine.Pin(self.sda_pin), freq=400000)
+                self._imu = MPU6050(i2c=self._i2c)
             except Exception as e:
                 print("IMU Service Error:", e)
                 return None
         return self._imu
 
+    def read_raw_accel_into(self, buf6):
+        """Read 6 raw bytes from MPU6050 register 0x3B directly at 400kHz."""
+        if self._i2c is None:
+            self.get_imu()
+        if self._i2c is not None:
+            self._i2c.readfrom_mem_into(0x68, 0x3B, buf6)
+
 class AppContext:
-    """Execution context injected into every running application."""
     def __init__(self, matrix, imu_service, state_service, app_manager):
         self.matrix = matrix
         self.imu_service = imu_service
@@ -187,13 +193,12 @@ class AppContext:
         return None
 
 class AppManager:
-    """Manages cooperative preemption, lifecycle, and execution of apps."""
     def __init__(self, matrix, imu_service, state_service, button_pin=9):
         self.matrix = matrix
         self.imu_service = imu_service
         self.state = state_service
         self.button = machine.Pin(button_pin, machine.Pin.IN, machine.Pin.PULL_UP)
-        self.catalog = [] # list of (name, async_coroutine_fn)
+        self.catalog = []
         self.current_idx = 0
         self.active_ctx = None
         self.preempt_request = None
@@ -203,7 +208,6 @@ class AppManager:
         self.state.registered_apps = [{"id": i+1, "name": n} for i, (n, _) in enumerate(self.catalog)]
 
     def request_switch(self, target):
-        """Preempt running app and switch to target."""
         self.preempt_request = target
         if self.active_ctx:
             self.active_ctx.request_exit()
