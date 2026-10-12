@@ -120,7 +120,10 @@ class WiFiManager:
         self.rssi = 0
 
     async def run_loop(self):
+        # Yield to let UI render immediately upon boot
+        await asyncio.sleep_ms(100)
         fail_cycles = 0
+
         while self._running:
             # 1. Connected in STA mode
             if self.sta.isconnected():
@@ -135,25 +138,28 @@ class WiFiManager:
                 await asyncio.sleep(3)
                 continue
 
-            # 2. Connection dropped or starting up
+            # 2. Try direct connect to known networks first (fast, non-blocking)
+            connected = False
+            for ssid, pwd in self.known_networks:
+                if await self._try_connect_sta(ssid, pwd, timeout_s=10):
+                    connected = True
+                    break
+
+            if connected:
+                fail_cycles = 0
+                continue
+
+            # 3. If direct connect failed, scan available networks
             self.mode = "NONE"
             self.reconnect_count += 1
             self.status = "SCANNING"
+            await asyncio.sleep_ms(50)
             scanned = self.scan()
             scanned_ssids = [item["ssid"] for item in scanned]
 
-            connected = False
-            # Try visible known networks in priority order
             for ssid, pwd in self.known_networks:
                 if ssid in scanned_ssids:
-                    if await self._try_connect_sta(ssid, pwd, timeout_s=9):
-                        connected = True
-                        break
-
-            # If not connected, try blind connect to known networks
-            if not connected:
-                for ssid, pwd in self.known_networks:
-                    if await self._try_connect_sta(ssid, pwd, timeout_s=6):
+                    if await self._try_connect_sta(ssid, pwd, timeout_s=8):
                         connected = True
                         break
 
@@ -161,11 +167,10 @@ class WiFiManager:
                 fail_cycles = 0
                 continue
 
-            # 3. Connection attempts failed: fallback to AP mode
+            # 4. Fallback to AP mode after repeated failures
             fail_cycles += 1
             if fail_cycles >= 2:
                 self._enable_ap()
-                # Stay in AP mode for 25s, then re-scan
                 for _ in range(12):
                     if not self._running:
                         break

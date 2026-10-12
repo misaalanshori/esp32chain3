@@ -25,6 +25,8 @@ def bootstrap_container():
         app_mgr.register(name, handler)
 
     menu = ioc.register_singleton("menu", Menu(matrix, app_mgr, hold_ms=500))
+    # Render menu digit immediately upon boot
+    menu.draw_menu()
 
     # 2. Register WebServer & MVC Controllers
     web = ioc.register_singleton("webserver", WebServer(ioc, port=80))
