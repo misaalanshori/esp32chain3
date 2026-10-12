@@ -47,7 +47,7 @@ class Menu:
             self.matrix.pixel(meter_col, 4 - i, 0xFFFF)
         self.matrix.show()
 
-    async def scroll_marquee(self, text, color, speed_ms=65):
+    async def scroll_marquee(self, text, color, speed_ms=120):
         """Scrolls text horizontally. Returns True if cancelled by tap."""
         btn = self.app_manager.button
         col_bits = [[] for _ in range(5)]
