@@ -109,6 +109,11 @@ class Menu:
         btn = self.app_manager.button
         self.draw_menu()
 
+        # Vigorous shake tracking (sustained for 2 seconds)
+        shake_start = 0
+        last_spike = 0
+        raw_buf = bytearray(6)
+
         while True:
             # Check preemption / remote launch request
             if self.app_manager.preempt_request is not None:
@@ -122,6 +127,44 @@ class Menu:
                         await self.launch_app(target_idx)
                         self.draw_menu()
                         continue
+
+            # Check vigorous shake gesture (sustained for 2s)
+            try:
+                self.app_manager.imu_service.read_raw_accel_into(raw_buf)
+                x = (raw_buf[0] << 8) | raw_buf[1]
+                if x >= 32768: x -= 65536
+                y = (raw_buf[2] << 8) | raw_buf[3]
+                if y >= 32768: y -= 65536
+                z = (raw_buf[4] << 8) | raw_buf[5]
+                if z >= 32768: z -= 65536
+
+                raw_mag = abs(x) + abs(y) + abs(z)
+                now = time.ticks_ms()
+
+                # Threshold 42000 (~2.6G vigorous shaking, much less sensitive than dice)
+                if raw_mag >= 42000:
+                    if shake_start == 0:
+                        shake_start = now
+                    last_spike = now
+                    # Triggered only after 2 full seconds of continuous vigorous shaking
+                    if time.ticks_diff(now, shake_start) >= 2000:
+                        shake_start = 0
+                        last_spike = 0
+                        wifi = self.app_manager.state.wifi_manager
+                        ip_str = wifi.ip if (wifi and wifi.ip != "0.0.0.0") else "NO IP"
+                        # Marquee IP address 3 times (cancelled by single tap)
+                        for _ in range(3):
+                            cancelled = await self.scroll_marquee(f"IP {ip_str}", 0x07FF, speed_ms=120)
+                            if cancelled:
+                                break
+                        self.draw_menu()
+                        continue
+                else:
+                    # If shaking pauses for > 350ms, reset the timer
+                    if shake_start > 0 and time.ticks_diff(now, last_spike) > 350:
+                        shake_start = 0
+            except Exception:
+                pass
 
             # Non-blocking physical button poll
             if btn.value() == 0:

@@ -15,7 +15,8 @@
 
 - **Single Tap**: Cycles to the next registered app (shows number in 3×5 font).
 - **Double Tap (quick < 250ms)**: Marquee scrolls the full name of the currently selected app across the 6×5 matrix.
-- **Single Tap during Marquee**: Immediately cancels the scroll and returns to the menu on the **same app item**.
+- **Vigorous Shake (2 seconds sustained)**: Scans IMU for continuous energetic shaking ($> 2.6\text{G}$) for 2 full seconds; marquee scrolls the device's assigned IP address 3 times across the matrix.
+- **Single Tap during Marquee**: Immediately cancels any active marquee (app name or IP) and returns to the menu on the **same app item**.
 - **Long Press (500ms)**: Column 5 (or col 0 for $\ge 10$) fills as a progress bar, then launches the selected app.
 - **Exit App**: Holding BOOT for > 450ms within any app exits back to the menu.
 
