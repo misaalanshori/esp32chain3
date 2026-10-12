@@ -2,19 +2,7 @@
 import time
 import asyncio
 from services import AppContext
-
-DIGITS = (
-    (0b111, 0b101, 0b101, 0b101, 0b111),  # 0
-    (0b010, 0b110, 0b010, 0b010, 0b111),  # 1
-    (0b111, 0b001, 0b111, 0b100, 0b111),  # 2
-    (0b111, 0b001, 0b111, 0b001, 0b111),  # 3
-    (0b101, 0b101, 0b111, 0b001, 0b001),  # 4
-    (0b111, 0b100, 0b111, 0b001, 0b111),  # 5
-    (0b111, 0b100, 0b111, 0b101, 0b111),  # 6
-    (0b111, 0b001, 0b001, 0b001, 0b001),  # 7
-    (0b111, 0b101, 0b111, 0b101, 0b111),  # 8
-    (0b111, 0b101, 0b111, 0b001, 0b111),  # 9
-)
+from apps.utils import DIGITS, FONT_3x5
 
 APP_COLORS = (
     0x07FF, 0x07E0, 0xFFE0, 0xF81F, 0xFD20, 0x041F,
@@ -58,6 +46,43 @@ class Menu:
         for i in range(dots):
             self.matrix.pixel(meter_col, 4 - i, 0xFFFF)
         self.matrix.show()
+
+    async def scroll_marquee(self, text, color, speed_ms=65):
+        """Scrolls text horizontally. Returns True if cancelled by tap."""
+        btn = self.app_manager.button
+        col_bits = [[] for _ in range(5)]
+        for y in range(5):
+            col_bits[y].extend([0] * 6)
+        for ch in text.upper():
+            glyph = FONT_3x5.get(ch, FONT_3x5.get(' ', (0, 0, 0, 0, 0)))
+            for y in range(5):
+                r = glyph[y]
+                col_bits[y].extend([(r >> 2) & 1, (r >> 1) & 1, r & 1, 0])
+        for y in range(5):
+            col_bits[y].extend([0] * 6)
+
+        total_cols = len(col_bits[0])
+        for col_idx in range(total_cols - 5):
+            # Single tap cancels marquee immediately
+            if btn.value() == 0:
+                while btn.value() == 0:
+                    await asyncio.sleep_ms(10)
+                await asyncio.sleep_ms(40)
+                return True
+
+            if self.app_manager.preempt_request is not None:
+                return True
+
+            self.matrix.fill(0)
+            for x in range(6):
+                src_x = col_idx + x
+                for y in range(5):
+                    if col_bits[y][src_x]:
+                        self.matrix.pixel(x, y, color)
+            self.matrix.show()
+            await asyncio.sleep_ms(speed_ms)
+
+        return False
 
     async def launch_app(self, idx):
         if not (0 <= idx < len(self.app_manager.catalog)):
@@ -126,11 +151,35 @@ class Menu:
                     await self.launch_app(self.current)
                     self.draw_menu()
                 else:
-                    if time.ticks_diff(time.ticks_ms(), t0) > 30:
-                        self.current = (self.current + 1) % len(self.app_manager.catalog)
-                        self.draw_menu()
+                    # Short press: Check for double tap
+                    if time.ticks_diff(time.ticks_ms(), t0) > 25:
                         while btn.value() == 0:
                             await asyncio.sleep_ms(10)
-                        await asyncio.sleep_ms(40)
+                        await asyncio.sleep_ms(30)
+
+                        # Wait up to 250ms for a second press
+                        double_tapped = False
+                        t_rel = time.ticks_ms()
+                        while time.ticks_diff(time.ticks_ms(), t_rel) < 250:
+                            if btn.value() == 0:
+                                double_tapped = True
+                                break
+                            await asyncio.sleep_ms(15)
+
+                        if double_tapped:
+                            while btn.value() == 0:
+                                await asyncio.sleep_ms(10)
+                            await asyncio.sleep_ms(30)
+
+                            # DOUBLE TAP: Scroll app name marquee
+                            name = self.app_manager.catalog[self.current][0]
+                            col = APP_COLORS[self.current % len(APP_COLORS)]
+                            await self.scroll_marquee(name, col)
+                            # Return to menu on the SAME app item
+                            self.draw_menu()
+                        else:
+                            # SINGLE TAP: Advance to next app item
+                            self.current = (self.current + 1) % len(self.app_manager.catalog)
+                            self.draw_menu()
 
             await asyncio.sleep_ms(25)

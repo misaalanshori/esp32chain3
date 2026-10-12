@@ -1,6 +1,6 @@
 # apps/dice.py - App 4: Shake-to-Roll Digital Dice
 import urandom
-from menu import DIGITS
+from apps.utils import DIGITS
 
 async def app_dice(ctx):
     imu = ctx.get_imu()

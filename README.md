@@ -13,9 +13,11 @@
 
 ## Menu System (`menu.py`)
 
-- **Short press (< 600ms)**: Cycles through registered apps (shows digit 1..9 in 3x5 font).
-- **Hold (600ms)**: Column 5 fills up as a hold meter. When full, flashes and opens the app.
-- **Exit app (optional)**: Holding BOOT for > 500ms exits back to the menu if the app uses `check_exit(btn)`.
+- **Single Tap**: Cycles to the next registered app (shows number in 3×5 font).
+- **Double Tap (quick < 250ms)**: Marquee scrolls the full name of the currently selected app across the 6×5 matrix.
+- **Single Tap during Marquee**: Immediately cancels the scroll and returns to the menu on the **same app item**.
+- **Long Press (500ms)**: Column 5 (or col 0 for $\ge 10$) fills as a progress bar, then launches the selected app.
+- **Exit App**: Holding BOOT for > 450ms within any app exits back to the menu.
 
 ### Registered Apps (`apps.py`):
 1. `Rainbow`: Animated RGB wave on matrix.
